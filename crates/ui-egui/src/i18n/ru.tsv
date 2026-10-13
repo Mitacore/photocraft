@@ -3071,3 +3071,6 @@ curves	Smooth	Сгладить
 @plural	{n} action|{n} actions	{n} операция|{n} операции|{n} операций
 	Auto Add/Delete	Автодобавление/удаление
 	ICO is limited to 256 × 256 pixels	ICO ограничен размером 256 × 256 пикселей
+
+# Window > Arrange > NAFY (linked reference / drawing navigation)
+	NAFY (Linked Reference & Drawing Navigation)	NAFY (связанная навигация референса и рисунка)

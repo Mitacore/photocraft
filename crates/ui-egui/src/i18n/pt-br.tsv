@@ -3915,3 +3915,6 @@ layerLabel	No Color	Sem cor
 @plural	{n} action|{n} actions	{n} ação|{n} ações
 	Auto Add/Delete	Adicionar/excluir automaticamente
 	ICO is limited to 256 × 256 pixels	ICO é limitado a 256 × 256 pixels
+
+# Window > Arrange > NAFY (linked reference / drawing navigation)
+	NAFY (Linked Reference & Drawing Navigation)	NAFY (navegação vinculada de referência e desenho)

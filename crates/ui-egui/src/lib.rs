@@ -953,6 +953,8 @@ impl PhotocraftApp {
         if gate.is_some() {
             self.session.authorize = None;
         }
+        // A command may have closed, added, resized or activated a document.
+        crate::view_cmds::enforce_linked_navigation(self);
         // An explicit channel target (⌘2, ⌘\, ⌘3…) decides what the Layers panel targets too:
         // ⌘2 after the mask was targeted goes back to the layer's pixels.
         if result.is_ok() && id.starts_with("channel.target") {

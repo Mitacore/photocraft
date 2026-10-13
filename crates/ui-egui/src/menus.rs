@@ -62,6 +62,8 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("view.rotateView", "Rotate View", &[], None),
     ("view.resetView", "Reset View", &["View"], None),
     ("window.newWindowForDocument", "New Window for Document", &["Window", "Arrange"], None),
+    // Not in Photoshop: a reference (left) and drawing (right) with one shared camera.
+    ("window.arrange.linkNavigation", "NAFY (Linked Reference & Drawing Navigation)", &["Window", "Arrange"], None),
     ("window.toggle.layers", "Layers", &["Window"], Some("F7")),
     ("window.toggle.history", "History", &["Window"], None),
     ("window.toggle.properties", "Properties", &["Window"], None),
@@ -153,7 +155,10 @@ pub fn invoke(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, params: Va
     if crate::discard_ui::intercept(app, id, &params) {
         return Ok(Value::Null);
     }
-    let r = invoke_unguarded(app, ctx, id, params)?;
+    let r = invoke_unguarded(app, ctx, id, params);
+    // ⌃Tab, Window › document items and shell commands can activate the linked reference.
+    crate::view_cmds::enforce_linked_navigation(app);
+    let r = r?;
     // The palette's empty-query list (UI-217-7); opening the palette isn't a command to recall.
     if id != "edit.search" {
         crate::palette::note_recent(ctx, id);
@@ -953,6 +958,7 @@ const PLACE_AFTER: &[(&str, &str)] = &[
     ("file.newFromClipboard", "file.new"),
     ("filter.render.relight", "filter.render.lightingEffects"),
     ("view.resetView", "view.flipHorizontal"),
+    ("window.arrange.linkNavigation", "window.arrange.matchAll"),
     ("filter.other.colorToAlpha", "filter.other.offset"),
 ];
 

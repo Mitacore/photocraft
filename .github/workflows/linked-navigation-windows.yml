@@ -1,0 +1,145 @@
+# Fork-only test build of Window › Arrange › NAFY (reference left, drawing right).
+# Runs the checks AGENTS.md asks for on the touched crate, then builds an UNSIGNED portable
+# Windows x64 zip the same way packaging/windows/package.ps1 does (static CRT, --features heif,
+# portable.txt beside the exe), without the MSI. Nothing is published: the zip is a downloadable
+# artifact of the run. The official signed release stays in release.yml.
+name: Linked navigation (Windows x64 portable)
+
+on:
+  push:
+    branches: [linked-navigation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: linked-navigation-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  checks:
+    name: checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies (egui/winit/rfd)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev \
+            libgl1-mesa-dev libgtk-3-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+          targets: ${{ runner.os == 'Linux' && 'wasm32-unknown-unknown' || '' }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Test photocraft-ui-egui (lib + integration tests)
+        run: cargo test -p photocraft-ui-egui --lib --tests --locked
+
+      - name: Clippy photocraft-ui-egui
+        run: cargo clippy -p photocraft-ui-egui --all-targets --locked -- -D warnings
+
+      - name: Dependency layering
+        if: runner.os == 'Linux'
+        run: cargo xtask layers
+
+      - name: wasm check (L0-L6)
+        if: runner.os == 'Linux'
+        run: cargo xtask wasm
+
+      # The new menu item is a shell command outside Photoshop's catalogue; show whether the
+      # generated parity checklist moves (report only).
+      - name: Parity checklist
+        if: runner.os == 'Linux'
+        run: |
+          cargo xtask parity
+          git diff --stat -- docs/parity-checklist.md || true
+
+  portable:
+    name: portable zip (windows x64, unsigned)
+    needs: checks
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: portable-x64
+
+      - name: Build photocraft.exe and photocraft-cli.exe
+        shell: pwsh
+        env:
+          # Static CRT, as package.ps1: no Visual C++ redistributable needed on the artist's PC.
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+          PHOTOCRAFT_REQUIRE_WINRES: "1"
+        run: |
+          $env:PHOTOCRAFT_BUILD_SHA = "${{ github.sha }}"
+          $env:PHOTOCRAFT_BUILD_DATE = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
+          cargo build --release --locked -p photocraft -p photocraft-cli --features heif --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bin = 'target\x86_64-pc-windows-msvc\release'
+          # PE checks, as package.ps1: x64 machine; the app is GUI (2), the CLI console (3).
+          function Get-PeHeader([string] $Path) {
+            $b = [IO.File]::ReadAllBytes($Path); $pe = [BitConverter]::ToInt32($b, 0x3C)
+            @{ Machine = [BitConverter]::ToUInt16($b, $pe + 4); Subsystem = [BitConverter]::ToUInt16($b, $pe + 0x5C) }
+          }
+          foreach ($c in @(@('photocraft.exe', 2), @('photocraft-cli.exe', 3))) {
+            $h = Get-PeHeader (Join-Path $bin $c[0])
+            if ($h.Machine -ne 0x8664 -or $h.Subsystem -ne $c[1]) { throw "$($c[0]): machine $($h.Machine) subsystem $($h.Subsystem)" }
+          }
+          & (Join-Path $bin 'photocraft-cli.exe') --version
+          if ($LASTEXITCODE -ne 0) { throw "photocraft-cli --version failed" }
+          $name = "photocraft-linked-navigation-windows-x64-portable"
+          $dir = Join-Path 'dist' $name
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item (Join-Path $bin 'photocraft.exe'), (Join-Path $bin 'photocraft-cli.exe') $dir
+          foreach ($f in 'README.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'NOTICE', 'ATTRIBUTION.md') { if (Test-Path $f) { Copy-Item $f $dir } }
+          # Portable mode: settings and presets go to PhotoCraftData\ next to the exe.
+          Copy-Item 'packaging\windows\portable.txt' $dir
+          @"
+          PhotoCraft - NAFY test build (UNSIGNED)
+          Built from ${{ github.repository }} @ ${{ github.sha }}
+
+          This build is not code-signed. Windows SmartScreen or your antivirus may warn before
+          it runs; that is expected for a custom build. Do not turn your antivirus off.
+
+          Try it: open a reference image and a new blank document of the same size (for example
+          both 1920x1080), click the blank document's tab, then choose
+          Window > Arrange > NAFY (Linked Reference & Drawing Navigation).
+          "@ | Set-Content -Encoding utf8 (Join-Path $dir 'READ-ME-FIRST.txt')
+          Get-FileHash (Join-Path $dir '*.exe') -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content -Encoding ascii (Join-Path $dir 'SHA256SUMS.txt')
+          Get-Content (Join-Path $dir 'SHA256SUMS.txt')
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: photocraft-linked-navigation-windows-x64-portable
+          path: dist/photocraft-linked-navigation-windows-x64-portable
+          retention-days: 30

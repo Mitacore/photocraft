@@ -2719,3 +2719,6 @@ curves	Smooth	平滑
 @plural	{n} action|{n} actions	{n} 個動作
 	Auto Add/Delete	自動增加/刪除
 	ICO is limited to 256 × 256 pixels	ICO 最大為 256 × 256 像素
+
+# Window > Arrange > NAFY (linked reference / drawing navigation)
+	NAFY (Linked Reference & Drawing Navigation)	NAFY（參考與繪圖連動導覽）

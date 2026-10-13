@@ -157,6 +157,73 @@ fn arrange_layouts_floating_windows_and_matching() {
     assert_eq!(app.ui.windows.len(), 1);
 }
 
+/// Window › Arrange › NAFY: off by default, live and checkable only for exactly two
+/// equally sized documents; the document active when linking is the drawing (right pane).
+#[test]
+fn link_navigation_pairs_two_equal_documents_by_identity() {
+    const LINK: &str = "window.arrange.linkNavigation";
+    assert!(is_live(LINK));
+    let items = menu_items(&app_with(0).0);
+    let item = items.iter().find(|i| i.id == LINK).unwrap();
+    assert_eq!((item.label.as_str(), item.path.as_slice()), ("NAFY (Linked Reference & Drawing Navigation)", &["Window".to_string(), "Arrange".to_string()][..]));
+    for lang in crate::i18n::Lang::all().filter(|l| l.complete_menus()) {
+        assert!(crate::i18n::has(lang, &item.label), "{}: NAFY untranslated", lang.code());
+    }
+    // Different widths (100 / 110): refused, nothing changes.
+    let (mut app, ctx) = app_with(2);
+    assert_eq!(checked(&app, LINK), Some(false));
+    assert_eq!(is_enabled(&app, LINK), Some(false));
+    assert!(menu(&mut app, &ctx, LINK, json!({})).is_err());
+    assert!(app.ui.view.linked_navigation.is_none());
+    assert_eq!(app.ui.view.arrange, "tabs");
+
+    let (mut app, ctx) = app_with(0);
+    for _ in 0..2 {
+        app.run("file.new", json!({"width": 1920, "height": 1080})).unwrap();
+    }
+    app.sync_views();
+    assert_eq!(is_enabled(&app, LINK), Some(true));
+    app.session.set_active(0);
+    let drawing_id = app.session.documents()[0].doc.id;
+    menu(&mut app, &ctx, LINK, json!({})).unwrap();
+    assert_eq!(checked(&app, LINK), Some(true));
+    assert_eq!(app.ui.view.arrange, "twoUpVertical");
+    let link = app.ui.view.linked_navigation.unwrap();
+    assert_eq!(link.drawing, drawing_id, "the active document draws");
+    assert_eq!(linked_pair(&app), Some((0, 1)));
+    let rect = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 600.0));
+    let panes = crate::canvas::arranged_cells(&app, rect).unwrap();
+    assert_eq!((panes[0].0, panes[0].1.min.x), (0, 500.0), "drawing: right");
+    assert_eq!((panes[1].0, panes[1].1.min.x), (1, 0.0), "reference: left");
+    // The pair survives a tab move (by id) and keeps the drawing active.
+    app.session.move_document(0, 1);
+    enforce_linked_navigation(&mut app);
+    assert_eq!(linked_pair(&app), Some((1, 0)));
+    assert_eq!(app.session.active_index(), Some(1));
+    // The camera copy is view only: zoom, centre and rotation, nothing else.
+    let mut drawing = app.ui.views[1].clone();
+    drawing.zoom = 2.75;
+    drawing.center = [421.5, 183.25];
+    drawing.rotation = 37.0;
+    let mut reference = app.ui.views[0].clone();
+    reference.fit_pending = true;
+    reference.doc_size = [1920, 1080];
+    let follower = crate::canvas::linked_reference_view(&drawing, &reference);
+    assert_eq!((follower.zoom, follower.center, follower.rotation), (2.75, [421.5, 183.25], 37.0));
+    assert!(!follower.fit_pending && !follower.fill_pending);
+    assert_eq!(follower.doc_size, reference.doc_size);
+    // Explicit on/off, and toggling.
+    menu(&mut app, &ctx, LINK, json!({"on": true})).unwrap();
+    assert_eq!(checked(&app, LINK), Some(true));
+    menu(&mut app, &ctx, LINK, json!({})).unwrap();
+    assert_eq!(checked(&app, LINK), Some(false));
+    assert!(menu(&mut app, &ctx, LINK, json!({"on": 3})).is_err());
+    // A stale pair (e.g. restored UI state naming documents no longer open) switches itself off.
+    app.ui.view.linked_navigation = Some(LinkedNavigation { drawing: photocraft_doc::DocId(u64::MAX), reference: photocraft_doc::DocId(u64::MAX - 1) });
+    enforce_linked_navigation(&mut app);
+    assert!(app.ui.view.linked_navigation.is_none());
+}
+
 #[test]
 fn two_up_and_stacked_cells_keep_their_existing_boundaries() {
     let rect = egui::Rect::from_min_max(egui::pos2(40.0, 75.0), egui::pos2(940.0, 675.0));

@@ -1829,9 +1829,26 @@ pub(crate) fn arranged_cells(app: &PhotocraftApp, rect: Rect) -> Option<Vec<(usi
     let idx = app.session.active_index()?;
     let n = app.session.documents().len();
     let cells = crate::view_cmds::cells(&app.ui.view.arrange, rect, n)?;
+    // NAFY: the drawing comes first so the reference follows its camera in the same
+    // frame, but it is shown on the RIGHT; the reference is on the LEFT.
+    if let Some((drawing, reference)) = crate::view_cmds::linked_pair(app)
+        && let &[left, right] = cells.as_slice()
+    {
+        return Some(vec![(drawing, right), (reference, left)]);
+    }
     let mut shown: Vec<(usize, Rect)> = (0..n).map(|k| (idx + k) % n).zip(cells).collect();
     shown.sort_by_key(|(d, _)| *d);
     Some(shown)
+}
+
+/// `view` with `camera`'s zoom, centre and rotation: NAFY's view-only camera copy. It
+/// never touches either document, its layers, tools or history.
+pub(crate) fn linked_reference_view(camera: &View, view: &View) -> View {
+    View { zoom: camera.zoom, center: camera.center, rotation: camera.rotation, fit_pending: false, fill_pending: false, ..view.clone() }
+}
+
+fn same_camera(a: &View, b: &View) -> bool {
+    a.zoom == b.zoom && a.center == b.center && a.rotation == b.rotation
 }
 
 fn documents(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
@@ -1868,6 +1885,8 @@ fn documents(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         crate::jobs_ui::open_card(app, ui, job);
         return;
     }
+    // A tab click or shortcut this frame may have activated the reference or closed a document.
+    crate::view_cmds::enforce_linked_navigation(app);
     let Some(idx) = app.session.active_index() else { return };
     let rect = ui.available_rect_before_wrap();
     app.last_canvas_rect = rect;
@@ -1876,14 +1895,28 @@ fn documents(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     // takes input, a click elsewhere activates that document.
     if let Some(shown) = arranged_cells(app, rect) {
         let t = crate::theme::Tokens::get(ui.ctx());
+        let linked = crate::view_cmds::linked_pair(app).is_some();
         for (d, cell) in shown {
             let cell = cell.shrink(1.0);
-            let view = app.ui.views[d].clone();
-            let v = canvas_view(app, ui, d, cell, view, d == idx);
+            // Linked: the reference shows the drawing's camera as the drawing pane just left it.
+            let view = if linked && d != idx { linked_reference_view(&app.ui.views[idx], &app.ui.views[d]) } else { app.ui.views[d].clone() };
+            let v = canvas_view(app, ui, d, cell, view.clone(), d == idx);
             if d != idx {
-                app.ui.views[d] = v;
-                if ui.input(|i| i.pointer.primary_pressed() && i.pointer.interact_pos().is_some_and(|p| cell.contains(p))) {
-                    app.session.set_active(d);
+                if linked {
+                    // The reference is view only and never activates. Navigating it (wheel, Hand,
+                    // scroll bars) moves the drawing, which both panes then show next frame. Only
+                    // with the pointer over it, so clamping alone can't ping-pong the cameras.
+                    let hovered = ui.input(|i| i.pointer.hover_pos().is_some_and(|p| cell.contains(p)));
+                    if hovered && !same_camera(&v, &view) {
+                        app.ui.views[idx] = linked_reference_view(&v, &app.ui.views[idx]);
+                        ui.ctx().request_repaint();
+                    }
+                    app.ui.views[d] = linked_reference_view(&app.ui.views[idx], &v);
+                } else {
+                    app.ui.views[d] = v;
+                    if ui.input(|i| i.pointer.primary_pressed() && i.pointer.interact_pos().is_some_and(|p| cell.contains(p))) {
+                        app.session.set_active(d);
+                    }
                 }
             }
             let stroke = if d == idx { Stroke::new(1.5, t.accent) } else { Stroke::new(1.0, Color32::from_black_alpha(160)) };
@@ -5611,6 +5644,9 @@ mod tap_pressure_tests {
 
 #[cfg(test)]
 mod tabs_tests;
+
+#[cfg(test)]
+mod linked_nav_tests;
 
 #[cfg(test)]
 mod tests {

@@ -3299,3 +3299,6 @@ curves	Smooth	매끄럽게
 @plural	{n} action|{n} actions	액션 {n}개
 	Auto Add/Delete	자동 추가/삭제
 	ICO is limited to 256 × 256 pixels	ICO는 256 × 256픽셀로 제한됩니다
+
+# Window > Arrange > NAFY (linked reference / drawing navigation)
+	NAFY (Linked Reference & Drawing Navigation)	NAFY (참조 및 드로잉 연결 탐색)

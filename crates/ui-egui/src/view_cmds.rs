@@ -69,6 +69,17 @@ impl Default for SnapTo {
     }
 }
 
+/// Window › Arrange › NAFY: two equally sized documents side by side, the reference on
+/// the left and the drawing on the right. The drawing's camera (zoom, centre, rotation) drives both;
+/// the reference is view only. Held by document id, so tab moves and focus changes can't swap them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LinkedNavigation {
+    /// The editable document (right pane); always the active one while linked.
+    pub drawing: photocraft_doc::DocId,
+    /// The view-only document (left pane).
+    pub reference: photocraft_doc::DocId,
+}
+
 /// View-, window- and type-preference state of the shell.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -88,6 +99,9 @@ pub struct ViewOptions {
     pub pixel_art_preview: bool,
     /// Window › Arrange layout of the document area: "tabs" or a tile/n-up layout id.
     pub arrange: String,
+    /// Window › Arrange › NAFY: the drawing/reference pair whose cameras move together
+    /// (`None` = off).
+    pub linked_navigation: Option<LinkedNavigation>,
     /// Type › Font Preview Size: "small" | "medium" | "large" | "extraLarge" | "huge".
     pub font_preview_size: String,
     /// Type › Language Options: "defaultFeatures" | "eastAsianFeatures" | "middleEasternFeatures",
@@ -120,6 +134,7 @@ impl Default for ViewOptions {
             pattern_preview: false,
             pixel_art_preview: false,
             arrange: "tabs".into(),
+            linked_navigation: None,
             font_preview_size: "medium".into(),
             language_features: "defaultFeatures".into(),
             middle_eastern_composer: false,
@@ -419,6 +434,7 @@ pub fn handles(id: &str) -> bool {
                     | "floatInWindow"
                     | "floatAllInWindows"
                     | "newWindowForDocument"
+                    | "linkNavigation"
                     | "matchZoom"
                     | "matchLocation"
                     | "matchRotation"
@@ -470,6 +486,7 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> Option<bool> {
         i if i.starts_with("window.arrange.") => match &i["window.arrange.".len()..] {
             "consolidateAllToTabs" => true,
             "floatInWindow" | "newWindowForDocument" => doc,
+            "linkNavigation" => app.ui.view.linked_navigation.is_some() || same_size_pair(app),
             "matchZoom" | "matchLocation" | "matchRotation" | "matchAll" => app.session.documents().len() > 1 || !app.ui.windows.is_empty(),
             _ => {
                 app.session.documents().len() > 1
@@ -506,6 +523,9 @@ pub fn checked(app: &PhotocraftApp, id: &str) -> Option<bool> {
         } else {
             LANGUAGE.contains(&k).then(|| o.language_features == k)
         };
+    }
+    if id == "window.arrange.linkNavigation" {
+        return Some(o.linked_navigation.is_some());
     }
     if let Some(k) = id.strip_prefix("window.arrange.")
         && LAYOUTS.contains(&k)
@@ -805,14 +825,96 @@ pub(crate) fn float_window(app: &mut PhotocraftApp, doc: usize, offset: usize) -
     wid
 }
 
+/// Two equally sized, non-empty documents: what NAFY pairs. This first version copies
+/// document-space cameras as they are, so the sizes must match; nothing is scaled to fit.
+fn same_size(a: &photocraft_engine::DocState, b: &photocraft_engine::DocState) -> bool {
+    let (a, b) = (&a.doc.size, &b.doc.size);
+    a.width > 0 && a.height > 0 && a.width == b.width && a.height == b.height
+}
+
+/// Exactly two open documents of the same pixel size.
+pub(crate) fn same_size_pair(app: &PhotocraftApp) -> bool {
+    match app.session.documents() {
+        [a, b] => same_size(a, b),
+        _ => false,
+    }
+}
+
+/// NAFY's `(drawing, reference)` document indices, while it still applies: exactly
+/// these two documents open, equally sized, in the 2-up vertical layout, with no floating
+/// document windows. `None` when off or no longer valid.
+pub(crate) fn linked_pair(app: &PhotocraftApp) -> Option<(usize, usize)> {
+    let link = app.ui.view.linked_navigation?;
+    if app.ui.view.arrange != "twoUpVertical" || !app.ui.windows.is_empty() {
+        return None;
+    }
+    let docs = app.session.documents();
+    let at = |id| docs.iter().position(|d| d.doc.id == id);
+    let (drawing, reference) = (at(link.drawing)?, at(link.reference)?);
+    (docs.len() == 2 && drawing != reference && same_size(docs.get(drawing)?, docs.get(reference)?)).then_some((drawing, reference))
+}
+
+/// Keep NAFY consistent after anything that may change the documents or the active
+/// one (a tab click, ⌃Tab, a menu, a close, automation): turn it off when the pair no longer
+/// applies, else keep the drawing active so the reference never becomes the editable document.
+pub(crate) fn enforce_linked_navigation(app: &mut PhotocraftApp) {
+    if app.ui.view.linked_navigation.is_none() {
+        return;
+    }
+    match linked_pair(app) {
+        None => app.ui.view.linked_navigation = None,
+        Some((drawing, _)) => {
+            if app.session.active_index() != Some(drawing) {
+                app.session.set_active(drawing);
+            }
+        }
+    }
+}
+
+fn link_navigation(app: &mut PhotocraftApp, p: &Value) -> Result<Value, String> {
+    let on = match p.get("on") {
+        None | Some(Value::Null) => app.ui.view.linked_navigation.is_none(),
+        Some(v) => v.as_bool().ok_or("on must be a boolean")?,
+    };
+    if !on {
+        app.ui.view.linked_navigation = None;
+        return Ok(json!({"linkedNavigation": false}));
+    }
+    if !same_size_pair(app) {
+        return Err("NAFY needs exactly two open documents of the same pixel size".into());
+    }
+    // The drawing is the document active when linking; the reference is the other one.
+    let drawing = app.session.active_index().ok_or("no document")?;
+    let reference = if drawing == 0 { 1 } else { 0 };
+    let docs = app.session.documents();
+    let id = |i: usize| docs.get(i).map(|d| d.doc.id).ok_or("no document");
+    let link = LinkedNavigation { drawing: id(drawing)?, reference: id(reference)? };
+    app.ui.view.linked_navigation = Some(link);
+    app.ui.view.arrange = "twoUpVertical".into();
+    // Floating document windows would show the reference with tools active.
+    app.ui.windows.clear();
+    // The drawing fits its pane; the reference follows its camera from the first frame.
+    if let Some(v) = app.ui.views.get_mut(drawing) {
+        v.fit_pending = true;
+    }
+    Ok(json!({"linkedNavigation": true, "drawing": drawing, "reference": reference}))
+}
+
 fn arrange(app: &mut PhotocraftApp, k: &str, p: &Value) -> Result<Value, String> {
     if LAYOUTS.contains(&k) {
         app.ui.view.arrange = k.to_string();
+        if k != "twoUpVertical" {
+            app.ui.view.linked_navigation = None;
+        }
         // Each document fits its new cell.
         app.ui.views.iter_mut().for_each(|v| v.fit_pending = true);
         return Ok(json!({"arrange": k}));
     }
+    if matches!(k, "consolidateAllToTabs" | "newWindowForDocument" | "floatInWindow" | "floatAllInWindows" | "cascade") {
+        app.ui.view.linked_navigation = None;
+    }
     match k {
+        "linkNavigation" => link_navigation(app, p),
         "consolidateAllToTabs" => {
             app.ui.view.arrange = "tabs".into();
             app.ui.windows.clear();

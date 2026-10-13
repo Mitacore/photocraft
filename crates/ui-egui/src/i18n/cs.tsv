@@ -3734,3 +3734,6 @@ navigator	Zoom	Zvětšení
 @plural	{n} action|{n} actions	{n} akce|{n} akce|{n} akcí
 	Auto Add/Delete	Automaticky přidat/odstranit
 	ICO is limited to 256 × 256 pixels	ICO je omezen na 256 × 256 pixelů
+
+# Window > Arrange > NAFY (linked reference / drawing navigation)
+	NAFY (Linked Reference & Drawing Navigation)	NAFY (propojená navigace reference a kresby)
