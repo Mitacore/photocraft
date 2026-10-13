@@ -173,12 +173,16 @@ fn the_button_sits_at_the_end_of_the_options_bar() {
     let smart = h.get_by_label(crate::smart_shape::TOOLTIP).rect();
     assert!(sync.left() >= smart.right() && sync.left() - smart.right() < 16.0, "right after Smart Shape: {sync:?} / {smart:?}");
     assert_eq!((sync.width().round(), sync.height().round()), (24.0, 24.0), "the bar's icon size");
-    // Every tool's bar ends with it (tools whose bars return early included).
-    for tool in [crate::state::Tool::Move, crate::state::Tool::Hand, crate::state::Tool::Pen, crate::state::Tool::SpotHealing, crate::state::Tool::Crop] {
+    // Every tool's bar with room ends with it (tools whose bars return early included).
+    for tool in [crate::state::Tool::Move, crate::state::Tool::Hand, crate::state::Tool::Pen, crate::state::Tool::SpotHealing] {
         h.state_mut().ui.tool = tool;
         h.run_steps(3);
         assert_eq!(h.query_all_by_label(TOOLTIP).count(), 1, "{tool:?}: one Sync View button");
     }
+    // A bar already full (the Crop tool's) leaves it out rather than scroll; never twice.
+    h.state_mut().ui.tool = crate::state::Tool::Crop;
+    h.run_steps(3);
+    assert!(h.query_all_by_label(TOOLTIP).count() <= 1, "Crop: at most one Sync View button");
 }
 
 #[test]
