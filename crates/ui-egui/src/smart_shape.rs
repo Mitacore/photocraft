@@ -772,6 +772,17 @@ fn fit_rect(ring: &[P], found: &[(usize, f64)], size: f64, first: P, ccw: bool) 
     if cs.len() != 4 {
         return None;
     }
+    // Every corner near a right angle (75°–105°): a trapezoid or another four-sided form is a
+    // quadrilateral, not a box, even when its outline stays close to one on average.
+    let square_corners = (0..4).all(|k| {
+        let (Some(before), Some(here), Some(after)) = (cs.get((k + 3) % 4), cs.get(k), cs.get((k + 1) % 4)) else { return false };
+        let (a, b) = (sub(*before, *here), sub(*after, *here));
+        let (la, lb) = (a[0].hypot(a[1]), b[0].hypot(b[1]));
+        la > 1e-9 && lb > 1e-9 && (dot(a, b) / (la * lb)).abs() < 0.26
+    });
+    if !square_corners {
+        return None;
+    }
     // Orientation: edge angles averaged modulo 90° (4θ), weighted by edge length.
     let (mut sx, mut sy) = (0.0, 0.0);
     for k in 0..4 {
