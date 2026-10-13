@@ -3398,9 +3398,12 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
             app.stylus.clock_ms = now_ms;
             // Smart Shape: Esc puts a corrected shape back to the freehand stroke; otherwise a
             // stroke resting long enough is corrected, and the UI wakes when the hold is due.
+            // Either change must show at once: a still pointer brings no input to repaint for.
             if app.drag.is_some() && !buttons.stopped {
                 if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
-                    crate::smart_shape::revert(app);
+                    if crate::smart_shape::revert(app) {
+                        ctx.request_repaint();
+                    }
                 } else if let Some(wait) = crate::smart_shape::tick(app) {
                     ctx.request_repaint_after(wait);
                 }

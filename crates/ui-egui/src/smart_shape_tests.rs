@@ -272,7 +272,10 @@ fn holding_still_turns_the_stroke_into_its_shape_as_one_undo_step() {
     let wait = hold(&mut app, 100.0).expect("pending");
     assert!(wait.as_millis() >= 550 && wait.as_millis() <= 610, "{wait:?}");
     assert!(!app.drag.as_ref().is_some_and(is_shape));
-    assert_eq!(hold(&mut app, 650.0), None, "due: corrected");
+    // Due: corrected while still held, and the canvas is asked to repaint at once (a still pointer
+    // brings no input; without this the shape only showed on release).
+    assert_eq!(hold(&mut app, 650.0), Some(Duration::ZERO), "due: corrected, repaint now");
+    assert_eq!(tick(&mut app), None, "nothing pending once corrected");
     let d = app.drag.as_ref().unwrap();
     assert_eq!(d.smart.as_ref().and_then(Hold::shape).map(|s| s.kind()), Some("line"));
     // The live preview now shows the line only: rebuilt from the document with every shape point.
@@ -309,6 +312,59 @@ fn holding_still_turns_the_stroke_into_its_shape_as_one_undo_step() {
     assert!(alpha(&app, 120, 120) < 0.05 && steps(&app) == before);
     assert!(app.session.redo());
     assert!(alpha(&app, 120, 120) > 0.9 && steps(&app) == before + 1);
+}
+
+/// Through real frames and pointer events, as on screen: press, draw, then keep the button down
+/// without moving. The stroke must become its shape while the button is still down, not on release.
+#[test]
+fn a_held_stroke_is_corrected_in_real_frames_before_release() {
+    use egui::{Event, Modifiers, PointerButton, vec2};
+    let mut a = setup(true);
+    a.sync_views();
+    let mut h = egui_kittest::Harness::builder().with_size(vec2(1000.0, 700.0)).build_ui_state(
+        |ui, app: &mut PhotocraftApp| {
+            let ctx = ui.ctx().clone();
+            if !ctx.fonts(|f| f.families().contains(&egui::FontFamily::Name("medium".into()))) {
+                return;
+            }
+            egui::CentralPanel::default().show(ui, |ui| crate::canvas::document_area(app, ui));
+        },
+        a,
+    );
+    crate::PhotocraftApp::setup_context(&h.ctx, crate::theme::ThemeKind::default());
+    for _ in 0..4 {
+        h.step();
+    }
+    let before = steps(h.state());
+    let c = h.state().last_canvas_rect.center();
+    let start = c - vec2(150.0, 0.0);
+    h.event(Event::PointerMoved(start));
+    h.step();
+    h.event(Event::PointerButton { pos: start, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
+    h.step();
+    let mut end = start;
+    for k in 1..=30i32 {
+        end = start + vec2(10.0 * k as f32, if k % 2 == 0 { 2.0 } else { -2.0 });
+        h.event(Event::PointerMoved(end));
+        h.step();
+    }
+    assert!(h.state().drag.is_some() && !h.state().drag.as_ref().is_some_and(is_shape), "drawing, not corrected yet");
+    // Hold still: frames go on with no input at all.
+    for _ in 0..120 {
+        h.step();
+        if h.state().drag.as_ref().is_some_and(is_shape) {
+            break;
+        }
+    }
+    assert!(h.state().drag.as_ref().is_some_and(is_shape), "corrected while the button is still down");
+    assert!(crate::canvas::live_stroke_state(h.state()).is_some(), "and previewed");
+    h.event(Event::PointerButton { pos: end, button: PointerButton::Primary, pressed: false, modifiers: Modifiers::NONE });
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(h.state().drag.is_none());
+    assert_eq!(steps(h.state()), before + 1, "one step");
+    assert_eq!(last_stroke(h.state())["smoothing"], json!(0.0), "the committed stroke is the shape");
 }
 
 #[test]
@@ -380,7 +436,7 @@ fn small_movements_keep_the_hold_and_larger_ones_restart_it() {
         assert!(tick(&mut app).is_some(), "still waiting at step {k}");
     }
     app.stylus.clock_ms += 150.0; // 750 ms since the pointer came to rest
-    assert_eq!(tick(&mut app), None);
+    assert_eq!(tick(&mut app), Some(Duration::ZERO), "corrected while held: repaint now");
     assert!(app.drag.as_ref().is_some_and(is_shape), "tremor kept the hold");
 
     // Moving on (more than the still radius) restarts the timer.
@@ -400,7 +456,7 @@ fn the_hold_time_is_configurable() {
     let (pts, _) = wobbly_line();
     draw(&mut app, &pts, |_| 1.0);
     assert!(hold(&mut app, 250.0).is_some());
-    assert_eq!(hold(&mut app, 60.0), None);
+    assert_eq!(hold(&mut app, 60.0), Some(Duration::ZERO));
     assert!(app.drag.as_ref().is_some_and(is_shape), "corrected after 310 ms");
     // Out-of-range settings are clamped, never zero.
     let mut other = setup(true);

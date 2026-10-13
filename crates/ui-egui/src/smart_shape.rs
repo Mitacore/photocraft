@@ -657,8 +657,10 @@ fn index_at(fo: &[f64], f: f64) -> usize {
 }
 
 /// Run once a frame while dragging: once the pointer has rested for the hold time, recognise the
-/// stroke and, when a shape fits, replace the drag's points with it. Returns how long until the
-/// hold is due (the caller wakes the UI then); `None` when nothing is pending.
+/// stroke and, when a shape fits, replace the drag's points with it. Returns when the UI must run
+/// its next frame: when the hold is due, or `Duration::ZERO` right after the stroke became a shape
+/// (a still pointer brings no input, so without it the shape would only show on release); `None`
+/// when nothing is pending.
 pub fn tick(app: &mut PhotocraftApp) -> Option<Duration> {
     let hold = f64::from(app.ui.tool_options.smart_shape_hold_ms.clamp(*HOLD_RANGE.start(), *HOLD_RANGE.end()));
     let (now, zoom) = (app.stylus.clock_ms, f64::from(app.point_zoom()));
@@ -697,7 +699,7 @@ pub fn tick(app: &mut PhotocraftApp) -> Option<Duration> {
     d.points = points;
     app.stylus.stroke = new_poses;
     app.stylus.times = vec![t0; n];
-    None
+    Some(Duration::ZERO)
 }
 
 /// Take the drag's "restart the live preview" flag.
