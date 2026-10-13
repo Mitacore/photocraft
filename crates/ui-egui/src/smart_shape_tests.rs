@@ -166,19 +166,14 @@ fn strokes_no_shape_fits_are_cleaned_not_forced() {
     assert_eq!(recognize(&[[f64::NAN, 1.0], [f64::INFINITY, 2.0]], 1.0), None);
 }
 
-/// Distance from `p` to the polyline `poly`.
-fn poly_dist(p: P, poly: &[P]) -> f64 {
-    poly.windows(2).map(|w| seg_dist(p, w[0], w[1])).fold(f64::MAX, f64::min)
-}
-
 /// The cleaned `shape` stays within `dev` of the stroke `drawn` everywhere, and leaves no part of
 /// `drawn` further than `cover` away (nothing cut off or flattened).
 fn assert_follows(shape: &Shape, drawn: &[P], dev: f64, cover: f64) {
     let out = shape.points();
-    let worst_out = out.iter().map(|&p| poly_dist(p, drawn)).fold(0.0, f64::max);
-    let worst_in = drawn.iter().map(|&p| poly_dist(p, &out)).fold(0.0, f64::max);
-    assert!(worst_out <= dev, "{}: strays {worst_out:.1} px from the stroke", shape.kind());
-    assert!(worst_in <= cover, "{}: leaves the stroke {worst_in:.1} px behind", shape.kind());
+    let worst = |of: &[P], to: &[P]| of.iter().map(|&p| (poly_dist(p, to), p)).fold((0.0, [0.0; 2]), |m, d| if d.0 > m.0 { d } else { m });
+    let ((out_d, out_at), (in_d, in_at)) = (worst(&out, drawn), worst(drawn, &out));
+    assert!(out_d <= dev, "{}: strays {out_d:.1} px from the stroke at {out_at:?}", shape.kind());
+    assert!(in_d <= cover, "{}: leaves the stroke {in_d:.1} px behind at {in_at:?}", shape.kind());
 }
 
 /// Deterministic jitter in -0.5..0.5.

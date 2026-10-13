@@ -419,6 +419,7 @@ fn outline_error(shape: &Shape, pts: &[P], size: f64) -> f64 {
 fn fit_tangent(pts: &[P], t1: P, t2: P) -> Option<([P; 4], f64, usize)> {
     let (&p0, &p3) = (pts.first()?, pts.last()?);
     let fallback = (dist(p0, p3).max(path_len(pts) / 2.0)) / 3.0;
+    let reach = path_len(pts);
     let mut ts = arc_fractions(pts);
     let mut ctrl = [p0, [p0[0] + t1[0] * fallback, p0[1] + t1[1] * fallback], [p3[0] + t2[0] * fallback, p3[1] + t2[1] * fallback], p3];
     for _ in 0..4 {
@@ -439,8 +440,9 @@ fn fit_tangent(pts: &[P], t1: P, t2: P) -> Option<([P; 4], f64, usize)> {
         if det.abs() > 1e-12 {
             (l1, l2) = ((c22 * x1 - c12 * x2) / det, (c11 * x2 - c12 * x1) / det);
         }
-        // A negative or vanishing handle would fold the curve back: use the plain third instead.
-        if !(l1 > 1e-6 && l2 > 1e-6 && l1.is_finite() && l2.is_finite()) {
+        // A negative or vanishing handle would fold the curve back, and one longer than the piece
+        // would throw it out in a loop: use the plain third instead.
+        if !(l1 > 1e-6 && l2 > 1e-6 && l1 <= reach && l2 <= reach) {
             (l1, l2) = (fallback, fallback);
         }
         ctrl[1] = [p0[0] + t1[0] * l1, p0[1] + t1[1] * l1];
@@ -702,6 +704,11 @@ fn fit_polyline(pts: &[P], size: f64) -> Option<Shape> {
         return None;
     }
     let verts = refine_vertices(pts, &idx, false, size);
+    // A corner is where the stroke went: one far off it cuts across a round turn (a U-turn
+    // squared off into a pointed V).
+    if verts.iter().any(|&q| poly_dist(q, pts) > POLY_TOL * size) {
+        return None;
+    }
     let mut v = [[0.0; 2]; MAX_POLY];
     for (slot, q) in v.iter_mut().zip(&verts) {
         *slot = *q;
@@ -711,8 +718,9 @@ fn fit_polyline(pts: &[P], size: f64) -> Option<Shape> {
 }
 
 /// Sharp corners of `pts` for freeform cleanup: where the turn over `k` samples is at least
-/// [`FREEFORM_CORNER`], still at least 70% of that over half the window (a smooth bend's turn
-/// halves with the window, a real corner's does not), and the largest within the window.
+/// [`FREEFORM_CORNER`], at least 80% of the turn over twice the window (a smooth bend's turn
+/// doubles with the window, a real corner's does not; the wider window also averages out the
+/// hand's jitter), and the largest within the window.
 /// `closed` wraps around.
 fn sharp_corners(pts: &[P], k: usize, closed: bool) -> Vec<usize> {
     let n = pts.len();
@@ -727,7 +735,7 @@ fn sharp_corners(pts: &[P], k: usize, closed: bool) -> Vec<usize> {
     };
     turns
         .iter()
-        .filter(|&&(i, a)| a >= FREEFORM_CORNER && local_turn(pts, i, (k / 2).max(1), closed) >= 0.7 * a)
+        .filter(|&&(i, a)| a >= FREEFORM_CORNER && a >= 0.8 * local_turn(pts, i, if closed { 2 * k } else { (2 * k).min(i).min(n - 1 - i) }, closed))
         .filter(|&&(i, a)| !turns.iter().any(|&(j, b)| j != i && near(i, j) && (b > a || (b == a && j < i))))
         .map(|&(i, _)| i)
         .collect()
@@ -808,7 +816,9 @@ fn freeform(raw: &[P], size: f64, closed: bool) -> Option<Shape> {
             };
             worst = worst.max(fit_pieces(&pts, a, b, t1, t2, fit, 0, &mut pieces));
         }
-        if pieces.len() <= MAX_FREEFORM && worst <= 2.0 * tol {
+        // The fit is measured at the samples only; between them a piece must not bulge away either.
+        let strays = || pieces.iter().flat_map(|p| (1..16).map(|i| bezier(p, i as f64 / 16.0))).any(|q| poly_dist(q, &pts) > 2.0 * tol);
+        if pieces.len() <= MAX_FREEFORM && worst <= 2.0 * tol && !strays() {
             let mut seg = [[[0.0; 2]; 4]; MAX_FREEFORM];
             for (slot, piece) in seg.iter_mut().zip(&pieces) {
                 *slot = *piece;
@@ -817,6 +827,11 @@ fn freeform(raw: &[P], size: f64, closed: bool) -> Option<Shape> {
         }
     }
     None
+}
+
+/// Distance from `p` to the polyline `poly`.
+fn poly_dist(p: P, poly: &[P]) -> f64 {
+    poly.windows(2).map(|w| seg_dist(p, w[0], w[1])).fold(f64::MAX, f64::min)
 }
 
 /// Signed area (shoelace): negative when the outline runs counter-clockwise on screen (y down).
