@@ -57,6 +57,10 @@ pub const TOOLTIP: &str = "Smart Shape — Hold at the end of a stroke to perfec
 const SAMPLES: usize = 64;
 /// Normalised error limits (fractions of the stroke length or size).
 const LINE_TOL: f64 = 0.03;
+/// Line spread and curve error are also at most this many screen points, however long the stroke:
+/// a long stroke with small waves is neither a line nor a curve through them.
+const LINE_TOL_SCREEN: f64 = 8.0;
+const CURVE_TOL_SCREEN: f64 = 8.0;
 /// Largest distance of a smoothed curve from the stroke, as a fraction of its size (at least
 /// [`CURVE_TOL_MIN`] document pixels; each cubic piece aims for it, up to twice is accepted once
 /// the pieces run out). Tight enough that waves keep their height.
@@ -913,7 +917,7 @@ fn recognize_open(pts: &[P], raw: &[P], size: f64, zoom: f64) -> Option<Shape> {
     let u = [angle.cos(), angle.sin()];
     let along: Vec<f64> = pts.iter().map(|&p| dot(sub(p, m), u)).collect();
     let extent = along.iter().copied().fold(f64::MIN, f64::max) - along.iter().copied().fold(f64::MAX, f64::min);
-    if extent > 1e-9 && minor.sqrt() <= LINE_TOL * extent && chord >= 0.85 * extent {
+    if extent > 1e-9 && minor.sqrt() <= (LINE_TOL * extent).min(LINE_TOL_SCREEN / zoom.max(1e-6)) && chord >= 0.85 * extent {
         let proj = |p: P| {
             let t = dot(sub(p, m), u);
             [m[0] + u[0] * t, m[1] + u[1] * t]
@@ -929,7 +933,7 @@ fn recognize_open(pts: &[P], raw: &[P], size: f64, zoom: f64) -> Option<Shape> {
     }
     // Smooth: a clean flowing curve, in as many pieces as its bends need (finer samples, so a
     // wavy line keeps every wave).
-    fit_spline(&resample(raw, 128), (CURVE_TOL * size).max(CURVE_TOL_MIN))
+    fit_spline(&resample(raw, 128), (CURVE_TOL * size).max(CURVE_TOL_MIN).min(CURVE_TOL_SCREEN / zoom.max(1e-6)))
 }
 
 fn fit_ellipse(ring: &[P], first: P, ccw: bool) -> Option<Shape> {
