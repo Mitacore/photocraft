@@ -48,7 +48,10 @@ jobs:
         run: |
           $env:PHOTOCRAFT_BUILD_SHA = "${{ github.sha }}"
           $env:PHOTOCRAFT_BUILD_DATE = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
-          cargo build --locked -p photocraft --features heif --target x86_64-pc-windows-msvc
+          # main.rs makes only release builds GUI-subsystem apps; link this dev exe the same way
+          # (flags for the final binary only, so the cached dependencies are reused), so starting it
+          # from Explorer opens no console window.
+          cargo rustc --locked -p photocraft --bin photocraft --features heif --target x86_64-pc-windows-msvc -- -C link-arg=/SUBSYSTEM:WINDOWS -C link-arg=/ENTRY:mainCRTStartup
           if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
 
       - name: Package
