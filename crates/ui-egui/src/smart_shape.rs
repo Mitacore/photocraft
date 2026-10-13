@@ -818,6 +818,12 @@ fn freeform(raw: &[P], size: f64, closed: bool) -> Option<Shape> {
         }
         // The fit is measured at the samples only; between them a piece must not bulge away either.
         let strays = || pieces.iter().flat_map(|p| (1..16).map(|i| bezier(p, i as f64 / 16.0))).any(|q| poly_dist(q, &pts) > 2.0 * tol);
+        #[cfg(test)]
+        {
+            let far = pieces.iter().flat_map(|p| (1..16).map(|i| bezier(p, i as f64 / 16.0))).map(|q| (poly_dist(q, &pts), q)).fold((0.0, [0.0; 2]), |m, d| if d.0 > m.0 { d } else { m });
+            let at: Vec<P> = breaks.iter().filter_map(|&i| pts.get(i).copied()).collect();
+            eprintln!("DIAG n={n} k={k} tol={tol:.2} pieces={} worst={worst:.2} far={far:?} breaks={at:?}", pieces.len());
+        }
         if pieces.len() <= MAX_FREEFORM && worst <= 2.0 * tol && !strays() {
             let mut seg = [[[0.0; 2]; 4]; MAX_FREEFORM];
             for (slot, piece) in seg.iter_mut().zip(&pieces) {
