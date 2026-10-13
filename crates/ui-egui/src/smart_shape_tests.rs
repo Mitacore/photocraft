@@ -365,9 +365,13 @@ fn small_movements_keep_the_hold_and_larger_ones_restart_it() {
     let mut app = setup(true);
     let (pts, _) = wobbly_line();
     draw(&mut app, &pts, |_| 1.0);
-    let end = *pts.last().unwrap();
     let none = egui::Modifiers::NONE;
-    // A tremor of a few points does not restart the hold.
+    // The pen comes to rest a little further on (past the still radius, so that is where it rests).
+    let last = *pts.last().unwrap();
+    let end = [last[0] + 8.0, last[1]];
+    app.stylus.clock_ms += 8.0;
+    tool_event(&mut app, ToolEvent::Move { x: end[0], y: end[1], pressure: 1.0 }, none);
+    // A tremor of a few points around it does not restart the hold.
     for (k, dy) in [1.5, -2.0, 2.5, -1.0].into_iter().enumerate() {
         app.stylus.clock_ms += 150.0;
         tool_event(&mut app, ToolEvent::Move { x: end[0], y: end[1] + dy, pressure: 1.0 }, none);
@@ -527,11 +531,9 @@ fn the_toggle_sits_with_the_brush_controls() {
     h.get_by_label(TOOLTIP).click();
     h.run_steps(2);
     assert!(!h.state().ui.tool_options.smart_shape, "and off again");
-    for tool in [Tool::Pencil] {
-        h.state_mut().ui.tool = tool;
-        h.run_steps(3);
-        assert_eq!(h.query_all_by_label(TOOLTIP).count(), 1, "{tool:?}");
-    }
+    h.state_mut().ui.tool = Tool::Pencil;
+    h.run_steps(3);
+    assert_eq!(h.query_all_by_label(TOOLTIP).count(), 1, "the Pencil has it too");
     for tool in [Tool::Eraser, Tool::Move, Tool::Hand] {
         h.state_mut().ui.tool = tool;
         h.run_steps(3);

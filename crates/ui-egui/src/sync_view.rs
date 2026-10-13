@@ -133,6 +133,11 @@ pub const TOOLTIP: &str = "Sync View — Open a synchronized window";
 pub fn button(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let doc = app.session.active().is_some();
     let on = is_on(app);
+    // A crowded bar (a narrow window, a tool with many options) leaves it out rather than make the
+    // bar scroll; it is also Window › Arrange › Sync View. While on it always shows, to turn it off.
+    if !on && ui.cursor().min.x + 30.0 > ui.clip_rect().right() {
+        return;
+    }
     let tip = crate::shortcuts::tip_label(app, TOOLTIP, COMMAND);
     ui.add_space(2.0);
     let clicked = ui.add_enabled_ui(doc || on, |ui| crate::icons::button_with_icon_size(ui, "sync-view", 24.0, 16.0, on, &tip)).inner.clicked();

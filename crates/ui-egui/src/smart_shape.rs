@@ -61,13 +61,32 @@ type P = [f64; 2];
 /// A corrected shape, in document coordinates.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Shape {
-    Line { a: P, b: P },
+    Line {
+        a: P,
+        b: P,
+    },
     /// A cubic Bézier: start, two controls, end.
-    Curve { p: [P; 4] },
+    Curve {
+        p: [P; 4],
+    },
     /// A circle when `rx == ry`.
-    Ellipse { c: P, rx: f64, ry: f64, angle: f64, start: f64, ccw: bool },
+    Ellipse {
+        c: P,
+        rx: f64,
+        ry: f64,
+        angle: f64,
+        start: f64,
+        ccw: bool,
+    },
     /// A square when `hw == hh`. `start` is the corner the outline starts from (0..4).
-    Rect { c: P, hw: f64, hh: f64, angle: f64, start: usize, ccw: bool },
+    Rect {
+        c: P,
+        hw: f64,
+        hh: f64,
+        angle: f64,
+        start: usize,
+        ccw: bool,
+    },
 }
 
 impl Shape {
@@ -319,11 +338,7 @@ fn corners(pts: &[P], closed: bool) -> Vec<(usize, f64)> {
         return Vec::new();
     }
     let at = |i: isize| -> Option<P> {
-        if closed {
-            pts.get(i.rem_euclid(n as isize) as usize).copied()
-        } else {
-            usize::try_from(i).ok().and_then(|i| pts.get(i)).copied()
-        }
+        if closed { pts.get(i.rem_euclid(n as isize) as usize).copied() } else { usize::try_from(i).ok().and_then(|i| pts.get(i)).copied() }
     };
     let turn = |i: usize| -> f64 {
         let i = i as isize;
@@ -719,7 +734,8 @@ pub(crate) fn revert(app: &mut PhotocraftApp) -> bool {
     true
 }
 
-/// The options bar toggle (Brush and Pencil): blue while on; right-click sets the hold time.
+/// The options bar toggle (Brush and Pencil; a circle and square with a spark): blue while on;
+/// right-click sets the hold time.
 pub fn button(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let on = app.ui.tool_options.smart_shape;
     let resp = crate::icons::button_with_icon_size(ui, "smart-shape", 24.0, 16.0, on, TOOLTIP);
