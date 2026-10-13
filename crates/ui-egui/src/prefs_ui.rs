@@ -2641,6 +2641,37 @@ mod tests {
     }
 
     #[test]
+    fn smart_shape_settings_survive_a_restart() {
+        let (mut app, store) = app_with_store();
+        let ctx = egui::Context::default();
+        tick(&mut app, &ctx);
+        let o = &mut app.ui.tool_options;
+        (o.smart_shape, o.smart_shape_hold_ms, o.smart_shape_strength) = (true, 900.0, crate::smart_shape::Strength::Strong);
+        o.smart_shape_freeform = false;
+        crate::tool_memory::persist(&mut app, &ctx);
+        tick(&mut app, &ctx);
+        assert_eq!(
+            stored(&store)["toolOptions"],
+            json!({"smart_shape": true, "smart_shape_hold_ms": 900.0, "smart_shape_strength": "strong", "smart_shape_freeform": false})
+        );
+        let (mut app2, _) = app_with_saved(store.lock().unwrap().clone());
+        tick(&mut app2, &ctx);
+        let o = &app2.ui.tool_options;
+        assert!(o.smart_shape && o.smart_shape_hold_ms == 900.0 && o.smart_shape_geometric && !o.smart_shape_freeform);
+        assert_eq!(o.smart_shape_strength, crate::smart_shape::Strength::Strong);
+        // Fresh preferences: Balanced, both correction types on, 700 ms.
+        let (mut app3, _) = app_with_saved(None);
+        tick(&mut app3, &ctx);
+        let o = &app3.ui.tool_options;
+        assert_eq!((o.smart_shape_strength, o.smart_shape_geometric, o.smart_shape_freeform), (crate::smart_shape::Strength::Balanced, true, true));
+        assert_eq!(o.smart_shape_hold_ms, 700.0);
+        // An unknown strength in a hand-edited file keeps the default.
+        let (mut app4, _) = app_with_saved(Some(json!({"toolOptions": {"smart_shape_strength": "max"}}).to_string()));
+        tick(&mut app4, &ctx);
+        assert_eq!(app4.ui.tool_options.smart_shape_strength, crate::smart_shape::Strength::Balanced);
+    }
+
+    #[test]
     fn tool_options_survive_a_restart() {
         let (mut app, store) = app_with_store();
         let ctx = egui::Context::default();

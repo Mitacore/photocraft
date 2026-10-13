@@ -336,6 +336,114 @@ fn narrow_closed_capsules_are_cleaned_not_collapsed() {
 }
 
 #[test]
+fn cleanup_strength_sets_how_much_wobble_goes_but_never_the_corners() {
+    let (clean, sharp) = mixed_stroke();
+    let drawn = noisy(&clean, 6.0, 2.5);
+    let raw = turning(&drawn, 600);
+    let mut smooth = Vec::new();
+    for strength in Strength::ALL {
+        let s = recognize_with(&drawn, 1.0, Options { strength, ..Options::default() }).expect("cleaned");
+        assert_eq!(s.kind(), "freeform", "{strength:?}");
+        let out = s.points();
+        assert!(dist(out[0], drawn[0]) < 1e-6 && dist(*out.last().unwrap(), *drawn.last().unwrap()) < 1e-6, "{strength:?}: ends kept");
+        assert_follows(&s, &clean, 16.0, 16.0);
+        for p in &sharp {
+            assert!(out.iter().any(|q| dist(*q, *p) < 8.0), "{strength:?}: the corner at {p:?} is kept");
+        }
+        smooth.push(turning(&out, 600));
+    }
+    let [light, balanced, strong] = smooth[..] else { unreachable!() };
+    assert!(light < raw && strong < 0.85 * light, "raw {raw:.1}, light {light:.1}, balanced {balanced:.1}, strong {strong:.1}");
+    assert!(balanced <= 1.05 * light && strong <= 1.05 * balanced, "light {light:.1}, balanced {balanced:.1}, strong {strong:.1}");
+}
+
+#[test]
+fn geometric_shapes_and_freeform_cleanup_switch_on_and_off_independently() {
+    let circle = ellipse([150.0, 150.0], 80.0, 80.0, 0.0, 1.05, 80, 2.0);
+    let (clean, _) = mixed_stroke();
+    let mixed = noisy(&clean, 6.0, 2.5);
+    let with = |geometric: bool, freeform: bool| Options { geometric, freeform, ..Options::default() };
+    // Both on (the default): the circle is a circle, the mixed stroke is cleaned.
+    assert_eq!(recognize_with(&circle, 1.0, with(true, true)).map(|s| s.kind()), Some("circle"));
+    assert_eq!(recognize_with(&mixed, 1.0, with(true, true)).map(|s| s.kind()), Some("freeform"));
+    // Geometric only: shapes still snap, anything else stays as drawn.
+    assert_eq!(recognize_with(&circle, 1.0, with(true, false)).map(|s| s.kind()), Some("circle"));
+    assert_eq!(recognize_with(&mixed, 1.0, with(true, false)), None);
+    // Freeform only: nothing becomes a geometric primitive; the circle is cleaned along its course.
+    let s = recognize_with(&circle, 1.0, with(false, true)).expect("cleaned");
+    assert!(matches!(s, Shape::Freeform { closed: true, .. }), "{s:?}");
+    assert_eq!(recognize_with(&mixed, 1.0, with(false, true)).map(|s| s.kind()), Some("freeform"));
+    // Both off: nothing changes.
+    assert_eq!(recognize_with(&circle, 1.0, with(false, false)), None);
+    assert_eq!(recognize_with(&mixed, 1.0, with(false, false)), None);
+}
+
+#[test]
+fn with_both_correction_types_off_holding_still_keeps_the_freehand_stroke() {
+    let mut app = setup(true);
+    app.ui.tool_options.smart_shape_geometric = false;
+    app.ui.tool_options.smart_shape_freeform = false;
+    let pts = ellipse([120.0, 120.0], 70.0, 70.0, 0.0, 1.05, 80, 2.0);
+    let before = steps(&app);
+    draw(&mut app, &pts, |_| 1.0);
+    assert_eq!(hold(&mut app, 800.0), None, "no timer, no correction");
+    release(&mut app, *pts.last().unwrap());
+    assert_eq!(steps(&app), before + 1);
+    assert!(is_freehand(&stroke_points(&app), &pts), "every freehand point");
+}
+
+#[test]
+fn connected_angular_strokes_become_polylines_with_exact_corners() {
+    let z = [[50.0, 50.0], [250.0, 50.0], [60.0, 200.0], [260.0, 200.0]];
+    let w = [[40.0, 40.0], [90.0, 200.0], [140.0, 80.0], [190.0, 200.0], [240.0, 40.0]];
+    let zig = [[40.0, 200.0], [80.0, 80.0], [120.0, 200.0], [160.0, 80.0], [200.0, 200.0], [240.0, 80.0], [280.0, 200.0]];
+    for verts in [&z[..], &w[..], &zig[..]] {
+        let drawn = noisy(&dense(verts), 4.0, 1.5);
+        let s = recognize(&drawn, 1.0).expect("corrected");
+        assert_vertices(&s, "polyline", verts, 5.0);
+    }
+    // A corner joining a straight arm to a curved one: no straight edge is forced over the curve.
+    let mut v = dense(&[[50.0, 50.0], [150.0, 250.0]]);
+    v.extend((1..=200).map(|i| {
+        let t = i as f64 / 200.0;
+        let u = 1.0 - t;
+        [u * u * 150.0 + 2.0 * u * t * 300.0 + t * t * 300.0, u * u * 250.0 + 2.0 * u * t * 250.0 + t * t * 80.0]
+    }));
+    let drawn = noisy(&v, 4.0, 1.5);
+    let s = recognize(&drawn, 1.0).expect("cleaned");
+    assert_eq!(s.kind(), "freeform", "{s:?}");
+    assert_follows(&s, &v, 5.0, 5.0);
+    assert!(s.points().iter().any(|q| dist(*q, [150.0, 250.0]) < 5.0), "the corner stays sharp");
+}
+
+#[test]
+fn skewed_quadrilaterals_keep_their_corners_and_are_not_squared() {
+    let parallelogram = [[100.0, 100.0], [300.0, 100.0], [380.0, 240.0], [180.0, 240.0]];
+    let perspective = [[150.0, 80.0], [300.0, 110.0], [340.0, 280.0], [80.0, 230.0]];
+    for verts in [parallelogram, perspective] {
+        let drawn = polygon(&verts, 24, 2.0);
+        let s = recognize(&drawn, 1.0).expect("corrected");
+        assert_vertices(&s, "quadrilateral", &verts, 6.0);
+    }
+}
+
+#[test]
+fn s_and_u_curves_come_out_as_smooth_open_curves() {
+    let s_curve: Vec<P> = (0..=300).map(|i| [50.0 + i as f64, 200.0 + 80.0 * (std::f64::consts::TAU * i as f64 / 300.0).sin()]).collect();
+    let u_curve: Vec<P> = (0..=240).map(|i| [80.0 + i as f64, 100.0 + (i as f64 - 120.0).powi(2) / 100.0]).collect();
+    for clean in [s_curve, u_curve] {
+        let drawn = noisy(&clean, 5.0, 1.5);
+        let s = recognize(&drawn, 1.0).expect("cleaned");
+        assert!(matches!(s.kind(), "curve" | "freeform"), "{s:?}");
+        assert!(s.end().is_some(), "stays open");
+        let out = s.points();
+        assert!(dist(out[0], drawn[0]) < 1e-6 && dist(*out.last().unwrap(), *drawn.last().unwrap()) < 1e-6);
+        assert_follows(&s, &clean, 5.0, 5.0);
+        assert!(turning(&out, 300) < turning(&drawn, 300), "smoother than drawn");
+    }
+}
+
+#[test]
 fn a_held_freeform_stroke_is_cleaned_while_pressed_and_undoes_in_one_step() {
     let mut app = setup(true);
     // A wavy stroke with a zigzag end, inside the 240 × 240 document.
@@ -358,39 +466,55 @@ fn a_held_freeform_stroke_is_cleaned_while_pressed_and_undoes_in_one_step() {
     assert!(painted(&app));
 }
 
-/// A before/after sheet for review: each sample stroke as drawn (left, red) and cleaned (right,
-/// black), painted with the real brush engine and saved as a PNG to `$SMART_SHAPE_SHEET`.
-/// Run on demand: `SMART_SHAPE_SHEET=sheet.png cargo test -p photocraft-ui-egui --lib
-/// smart_shape_before_after_sheet -- --ignored`.
+/// A before/after sheet for review: each sample stroke as drawn (red), then corrected at Light,
+/// Balanced and Strong cleanup (black), painted with the real brush engine and saved as a PNG to
+/// `$SMART_SHAPE_SHEET`. Run on demand: `SMART_SHAPE_SHEET=sheet.png cargo test -p
+/// photocraft-ui-egui --lib smart_shape_before_after_sheet -- --ignored`.
 #[test]
 #[ignore = "writes a review image; run on demand"]
 fn smart_shape_before_after_sheet() {
     let Ok(path) = std::env::var("SMART_SHAPE_SHEET") else { return };
     let (mixed, _) = mixed_stroke();
-    let wave: Vec<P> = (0..=400).map(|i| [700.0 + i as f64, 760.0 + 30.0 * (std::f64::consts::TAU * i as f64 / 100.0).sin()]).collect();
+    // Samples in a 1200 × 1000 panel: the long mixed stroke (y 180..570), then a row of smaller ones.
     let zig = dense(&[[100.0, 700.0], [150.0, 620.0], [200.0, 700.0], [250.0, 620.0], [300.0, 700.0], [350.0, 620.0], [400.0, 700.0]]);
-    let tri = polygon(&[[460.0, 640.0], [560.0, 800.0], [380.0, 800.0]], 24, 0.0);
-    let mut cap = dense(&[[300.0, 880.0], [800.0, 880.0]]);
+    let tri = polygon(&[[510.0, 620.0], [600.0, 780.0], [420.0, 780.0]], 24, 0.0);
+    let quad = polygon(&[[700.0, 620.0], [830.0, 640.0], [860.0, 780.0], [660.0, 760.0]], 24, 0.0);
+    let s_curve: Vec<P> = (0..=240).map(|i| [920.0 + i as f64, 700.0 + 70.0 * (std::f64::consts::TAU * i as f64 / 240.0).sin()]).collect();
+    let w = dense(&[[100.0, 820.0], [140.0, 960.0], [180.0, 860.0], [220.0, 960.0], [260.0, 820.0]]);
+    let wave: Vec<P> = (0..=400).map(|i| [320.0 + i as f64, 900.0 + 30.0 * (std::f64::consts::TAU * i as f64 / 100.0).sin()]).collect();
+    let mut cap = dense(&[[780.0, 880.0], [1100.0, 880.0]]);
     cap.extend((1..=47).map(|i| {
         let a = -std::f64::consts::FRAC_PI_2 + std::f64::consts::PI * i as f64 / 47.0;
-        [800.0 + 15.0 * a.cos(), 895.0 + 15.0 * a.sin()]
+        [1100.0 + 15.0 * a.cos(), 895.0 + 15.0 * a.sin()]
     }));
-    cap.extend(dense(&[[800.0, 910.0], [300.0, 910.0]]).into_iter().skip(1));
+    cap.extend(dense(&[[1100.0, 910.0], [780.0, 910.0]]).into_iter().skip(1));
     cap.extend((1..=47).map(|i| {
         let a = std::f64::consts::FRAC_PI_2 + std::f64::consts::PI * i as f64 / 47.0;
-        [300.0 + 15.0 * a.cos(), 895.0 + 15.0 * a.sin()]
+        [780.0 + 15.0 * a.cos(), 895.0 + 15.0 * a.sin()]
     }));
-    let samples = [noisy(&mixed, 6.0, 3.0), noisy(&wave, 5.0, 2.0), noisy(&zig, 6.0, 2.5), noisy(&tri, 6.0, 2.5), noisy(&cap, 6.0, 2.0)];
+    let samples = [
+        noisy(&mixed, 6.0, 3.0),
+        noisy(&zig, 6.0, 2.5),
+        noisy(&tri, 6.0, 2.5),
+        noisy(&quad, 6.0, 2.5),
+        noisy(&s_curve, 5.0, 2.0),
+        noisy(&w, 5.0, 2.0),
+        noisy(&wave, 5.0, 2.0),
+        noisy(&cap, 6.0, 2.0),
+    ];
     let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
-    app.run("file.new", json!({"width": 2500, "height": 1000, "background": "white"})).unwrap();
+    app.run("file.new", json!({"width": 4800, "height": 1020, "background": "white"})).unwrap();
     let mut paint = |pts: &[P], dx: f64, color: &str| {
         let points: Vec<[f64; 3]> = pts.iter().map(|p| [p[0] + dx, p[1], 1.0]).collect();
         app.run("paint.stroke", json!({"points": points, "color": color, "size": 5, "smoothing": 0.0})).unwrap();
     };
     for drawn in &samples {
         paint(drawn, 0.0, "#c03030");
-        let cleaned = recognize(drawn, 1.0).map_or_else(|| drawn.clone(), |s| s.points());
-        paint(&cleaned, 1250.0, "#101010");
+        for (col, strength) in Strength::ALL.into_iter().enumerate() {
+            let opts = Options { strength, ..Options::default() };
+            let cleaned = recognize_with(drawn, 1.0, opts).map_or_else(|| drawn.clone(), |s| s.points());
+            paint(&cleaned, 1200.0 * (col + 1) as f64, "#101010");
+        }
     }
     let doc = app.session.active().unwrap().doc.clone();
     let png = photocraft_io::export(&doc, "png", &Default::default()).unwrap();

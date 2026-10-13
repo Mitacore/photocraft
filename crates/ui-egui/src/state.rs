@@ -682,6 +682,14 @@ pub struct ToolOptions {
     /// How long the pointer must rest before Smart Shape corrects the stroke, in milliseconds.
     #[serde(default = "default_smart_shape_hold_ms")]
     pub smart_shape_hold_ms: f32,
+    /// Smart Shape settings popup: freeform cleanup strength, and which corrections it makes
+    /// (geometric shapes, freeform cleanup; both on by default).
+    #[serde(default)]
+    pub smart_shape_strength: crate::smart_shape::Strength,
+    #[serde(default = "yes")]
+    pub smart_shape_geometric: bool,
+    #[serde(default = "yes")]
+    pub smart_shape_freeform: bool,
     /// Eraser › Mode: `brush` (soft, anti-aliased) or `pencil` (hard, aliased pixels, through
     /// `paint.pencil`), as in Photoshop's options bar (#2662).
     #[serde(default = "default_eraser_mode")]
@@ -851,6 +859,9 @@ impl Default for ToolOptions {
             pencil_clear: false,
             smart_shape: false,
             smart_shape_hold_ms: default_smart_shape_hold_ms(),
+            smart_shape_strength: crate::smart_shape::Strength::Balanced,
+            smart_shape_geometric: true,
+            smart_shape_freeform: true,
             eraser_mode: default_eraser_mode(),
             magnetic_width: 10.0,
             magnetic_contrast: 10.0,

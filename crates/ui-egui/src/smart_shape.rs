@@ -35,6 +35,11 @@
 //!   with tangent-continuous cubic pieces within a small distance of the stroke, so it keeps its
 //!   course, ends, peaks and corners and loses only the jitter. Marks too small on screen stay as
 //!   drawn.
+//!
+//! Settings (right-click on the button; remembered with the other tool options): cleanup strength
+//! (Light, Balanced, Strong: how much wobble freeform cleanup removes; corners stay at every
+//! strength), the correction types (geometric shapes, freeform cleanup; each on its own, both on by
+//! default; with both off holding still does nothing) and the hold time.
 
 use std::time::Duration;
 
@@ -53,6 +58,67 @@ pub const STILL_RADIUS: f64 = 6.0;
 pub const MIN_EXTENT: f64 = 16.0;
 pub const TOOLTIP: &str = "Smart Shape — Hold at the end of a stroke to perfect its shape";
 
+/// How strongly freeform cleanup irons out the hand's jitter (Smart Shape settings popup).
+/// Corners and the ends stay where they were drawn at every strength.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Strength {
+    /// Closest to the stroke: only the finest tremor goes.
+    Light,
+    #[default]
+    Balanced,
+    /// Smoothest: small unintended wobbles go too.
+    Strong,
+}
+
+impl Strength {
+    pub const ALL: [Strength; 3] = [Strength::Light, Strength::Balanced, Strength::Strong];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Strength::Light => "Light",
+            Strength::Balanced => "Balanced",
+            Strength::Strong => "Strong",
+        }
+    }
+
+    /// The freeform tolerance relative to Balanced.
+    fn factor(self) -> f64 {
+        match self {
+            Strength::Light => 0.55,
+            Strength::Balanced => 1.0,
+            Strength::Strong => 1.8,
+        }
+    }
+}
+
+/// What Smart Shape may do with a held stroke (its settings popup).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Options {
+    pub strength: Strength,
+    /// Lines, curves, polylines, circles, ellipses, triangles, quadrilaterals, rectangles.
+    pub geometric: bool,
+    /// Cleanup of strokes no geometric shape fits.
+    pub freeform: bool,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Self { strength: Strength::Balanced, geometric: true, freeform: true }
+    }
+}
+
+impl Options {
+    pub fn from_tool_options(o: &crate::state::ToolOptions) -> Self {
+        Self { strength: o.smart_shape_strength, geometric: o.smart_shape_geometric, freeform: o.smart_shape_freeform }
+    }
+
+    /// Both correction types off: holding still changes nothing.
+    pub fn none(&self) -> bool {
+        !self.geometric && !self.freeform
+    }
+}
+
 /// Points the stroke is resampled to for recognition.
 const SAMPLES: usize = 64;
 /// Normalised error limits (fractions of the stroke length or size).
@@ -60,6 +126,9 @@ const LINE_TOL: f64 = 0.03;
 /// Line spread and curve error are also at most this many screen points, however long the stroke:
 /// a long stroke with small waves is neither a line nor a curve through them.
 const LINE_TOL_SCREEN: f64 = 8.0;
+/// A polyline edge strays at most this far from the stroke (fraction of its size, and screen points).
+const POLY_EDGE_DEV: f64 = 0.06;
+const POLY_EDGE_DEV_SCREEN: f64 = 14.0;
 const CURVE_TOL_SCREEN: f64 = 8.0;
 /// Largest distance of a smoothed curve from the stroke, as a fraction of its size (at least
 /// [`CURVE_TOL_MIN`] document pixels; each cubic piece aims for it, up to twice is accepted once
@@ -79,9 +148,10 @@ const POLY_TOL: f64 = 0.035;
 /// A polygon vertex must turn at least this much (radians, over the corner window): rounder
 /// bends are curves, not corners.
 const VERTEX_TURN: f64 = 0.6; // 34°
-/// Most cubic pieces a smoothed curve may have, and most vertices of a polygon or polyline.
+/// Most cubic pieces a smoothed curve may have, and most vertices of a polyline (an L, V, Z, W or
+/// M: up to six connected straight edges; closed polygons have three or four).
 pub const MAX_SEGMENTS: usize = 8;
-pub const MAX_POLY: usize = 5;
+pub const MAX_POLY: usize = 7;
 /// Freeform cleanup: largest distance of the cleaned path from the stroke, as a fraction of its
 /// size (at least [`FREEFORM_TOL_MIN`] document pixels). Small enough to keep every intended bend,
 /// large enough to iron out a hand's jitter.
@@ -708,8 +778,10 @@ fn fit_polygon(ring: &[P], size: f64, first: P, ccw: bool) -> Option<Shape> {
     (outline_error(&shape, ring, size) <= POLY_TOL).then_some(shape)
 }
 
-/// An open stroke with sharp corners as straight edges (an L, a V, a Z): two to four edges.
-fn fit_polyline(pts: &[P], size: f64) -> Option<Shape> {
+/// An open stroke with sharp corners as straight edges (an L, a V, a Z, a W): two to six edges,
+/// each really straight: no point of the stroke further off its edge than a wobble, so a stroke
+/// mixing corners with curved runs keeps its curves (freeform cleanup) instead.
+fn fit_polyline(pts: &[P], size: f64, zoom: f64) -> Option<Shape> {
     let last = pts.len().checked_sub(1)?;
     let k = corner_window(pts.len());
     let mut idx = rdp(pts, 0.05 * size);
@@ -729,7 +801,9 @@ fn fit_polyline(pts: &[P], size: f64) -> Option<Shape> {
         *slot = *q;
     }
     let shape = Shape::Poly { v, n: m, closed: false };
-    (outline_error(&shape, pts, size) <= POLY_TOL).then_some(shape)
+    let outline = shape.points();
+    let straight = pts.iter().all(|&p| poly_dist(p, &outline) <= (POLY_EDGE_DEV * size).min(POLY_EDGE_DEV_SCREEN / zoom.max(1e-6)));
+    (straight && outline_error(&shape, pts, size) <= POLY_TOL).then_some(shape)
 }
 
 /// Sharp corners of `pts` for freeform cleanup: where the turn over `k` samples is at least
@@ -782,7 +856,7 @@ fn fine_samples(raw: &[P], size: f64, zoom: f64) -> Option<(Vec<P>, usize)> {
 /// distance of the stroke (Schneider's fitting), so bends, peaks and valleys keep their place and
 /// height. The ends stay where they were drawn; an open stroke stays open. `None` when even many
 /// pieces can't follow it closely.
-fn freeform(raw: &[P], size: f64, zoom: f64, closed: bool) -> Option<Shape> {
+fn freeform(raw: &[P], size: f64, zoom: f64, strength: Strength, closed: bool) -> Option<Shape> {
     let (mut pts, k) = fine_samples(raw, size, zoom)?;
     let n = pts.len();
     let mut smooth_closure = false;
@@ -816,7 +890,7 @@ fn freeform(raw: &[P], size: f64, zoom: f64, closed: bool) -> Option<Shape> {
     // As many pieces as the course needs (a piece spans at least 8 samples, so at most n / 8),
     // splitting near the worst point but never at the very ends, so a long run with many bends is
     // halved down to its bends instead of running out of splits.
-    let tol = (size * FREEFORM_TOL).max(FREEFORM_TOL_MIN).min(FREEFORM_TOL_SCREEN / zoom.max(1e-6));
+    let tol = (size * FREEFORM_TOL).max(FREEFORM_TOL_MIN).min(FREEFORM_TOL_SCREEN / zoom.max(1e-6)) * strength.factor();
     let fit = Fit { tol, max_depth: FREEFORM_DEPTH, min_span: 8, balanced: true };
     let mut pieces: Vec<[P; 4]> = Vec::new();
     let mut worst: f64 = 0.0;
@@ -827,14 +901,20 @@ fn freeform(raw: &[P], size: f64, zoom: f64, closed: bool) -> Option<Shape> {
             pieces.push([pa, lerp(pa, pb, 1.0 / 3.0), lerp(pa, pb, 2.0 / 3.0), pb]);
             continue;
         }
-        let m = 3;
+        // Leaving an end of the run: towards the mean of its next few samples (up to a corner
+        // window, at most a third of the run), so one jittery sample can't set off a hook.
+        let w = k.min((b - a) / 3).max(1);
+        let ahead = |from: usize, step: isize| -> Option<P> {
+            let next: Vec<P> = (1..=w as isize).filter_map(|j| from.checked_add_signed(step * j).and_then(|i| pts.get(i)).copied()).collect();
+            unit(sub(mean(&next), *pts.get(from)?))
+        };
         let t1 = match closure.filter(|_| a == 0) {
             Some(t) => t,
-            None => dir(a, a + m)?,
+            None => ahead(a, 1).or_else(|| dir(a, a + 3))?,
         };
         let t2 = match closure.filter(|_| b == n - 1) {
             Some(t) => [-t[0], -t[1]],
-            None => dir(b, b - m)?,
+            None => ahead(b, -1).or_else(|| dir(b, b - 3))?,
         };
         worst = worst.max(fit_pieces(&pts, a, b, t1, t2, fit, 0, &mut pieces));
     }
@@ -873,19 +953,30 @@ fn closes_on_itself(pts: &[P], size: f64) -> bool {
 /// Recognise the stroke `raw` (document points) drawn at `zoom` (screen points per document
 /// pixel). `None`: no shape fits well enough, keep the freehand stroke.
 pub fn recognize(raw: &[P], zoom: f64) -> Option<Shape> {
+    recognize_with(raw, zoom, Options::default())
+}
+
+/// [`recognize`] with the Smart Shape settings: a confident geometric match first (when geometric
+/// shapes are on), else the freeform cleanup (when it is on) at the chosen strength.
+pub fn recognize_with(raw: &[P], zoom: f64, opts: Options) -> Option<Shape> {
     let raw: Vec<P> = raw.iter().copied().filter(|p| p[0].is_finite() && p[1].is_finite()).collect();
     let pts = resample(&raw, SAMPLES);
     let (&first, &last) = (pts.first()?, pts.last()?);
     let (min, max) = pts.iter().fold(([f64::MAX; 2], [f64::MIN; 2]), |(lo, hi), p| ([lo[0].min(p[0]), lo[1].min(p[1])], [hi[0].max(p[0]), hi[1].max(p[1])]));
     let size = dist(min, max);
     let len = path_len(&pts);
-    if size * zoom.max(1e-6) < MIN_EXTENT || len <= 1e-9 {
+    if opts.none() || size * zoom.max(1e-6) < MIN_EXTENT || len <= 1e-9 {
         return None;
     }
+    let cleanup = |closed: bool| if opts.freeform { freeform(&raw, size, zoom, opts.strength, closed) } else { None };
     let closed = dist(first, last) <= CLOSED_GAP * len && closes_on_itself(&pts, size);
     if !closed {
         // No geometric shape fits: the freeform cleanup of the same path.
-        return recognize_open(&pts, &raw, size, zoom).or_else(|| freeform(&raw, size, zoom, false));
+        let shape = if opts.geometric { recognize_open(&pts, &raw, size, zoom) } else { None };
+        return shape.or_else(|| cleanup(false));
+    }
+    if !opts.geometric {
+        return cleanup(true);
     }
     // Closed: drop the closing overlap so the outline is one loop.
     let ring: Vec<P> = pts.get(..pts.len().saturating_sub(1)).unwrap_or_default().to_vec();
@@ -904,7 +995,7 @@ pub fn recognize(raw: &[P], zoom: f64) -> Option<Shape> {
     let candidates = [if found.len() <= 2 { fit_ellipse(&ring, first, ccw) } else { None }, fit_polygon(&ring, size, first, ccw)];
     let best = candidates.into_iter().flatten().map(|s| (outline_error(&s, &ring, size), s)).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, s)| s);
     // No geometric shape fits (a narrow loop, a long irregular outline): the freeform cleanup.
-    best.or_else(|| freeform(&raw, size, zoom, true))
+    best.or_else(|| cleanup(true))
 }
 
 fn recognize_open(pts: &[P], raw: &[P], size: f64, zoom: f64) -> Option<Shape> {
@@ -929,7 +1020,7 @@ fn recognize_open(pts: &[P], raw: &[P], size: f64, zoom: f64) -> Option<Shape> {
     // turn halves with the window, so a tight U-turn stays a round U-turn).
     let sharp = fine_samples(raw, size, zoom).is_some_and(|(fine, k)| !sharp_corners(&fine, k, false).is_empty());
     if sharp {
-        return fit_polyline(pts, size);
+        return fit_polyline(pts, size, zoom);
     }
     // Smooth: a clean flowing curve, in as many pieces as its bends need (finer samples, so a
     // wavy line keeps every wave).
@@ -1163,6 +1254,10 @@ fn index_at(fo: &[f64], f: f64) -> usize {
 pub fn tick(app: &mut PhotocraftApp) -> Option<Duration> {
     let hold = f64::from(app.ui.tool_options.smart_shape_hold_ms.clamp(*HOLD_RANGE.start(), *HOLD_RANGE.end()));
     let (now, zoom) = (app.stylus.clock_ms, f64::from(app.point_zoom()));
+    // Both correction types off: no timer, the stroke stays as drawn.
+    if Options::from_tool_options(&app.ui.tool_options).none() {
+        return None;
+    }
     let d = app.drag.as_ref()?;
     let h = d.smart.as_ref()?;
     if h.snapped.is_some() || h.tried || !d.tool.is_brushlike() {
@@ -1173,7 +1268,7 @@ pub fn tick(app: &mut PhotocraftApp) -> Option<Duration> {
         return Some(Duration::from_millis((hold - waited).ceil().max(1.0) as u64));
     }
     let raw: Vec<P> = d.points.iter().map(|q| [q[0], q[1]]).collect();
-    let shape = recognize(&raw, zoom);
+    let shape = recognize_with(&raw, zoom, Options::from_tool_options(&app.ui.tool_options));
     let (poses, times, t0) = (app.stylus.stroke.clone(), app.stylus.times.clone(), app.stylus.point_ms(0));
     let d = app.drag.as_mut()?;
     let h = d.smart.as_mut()?;
@@ -1239,11 +1334,31 @@ pub fn button(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     if resp.clicked() {
         app.ui.tool_options.smart_shape = !on;
     }
-    resp.context_menu(|ui| {
-        ui.label(tl!("Smart Shape hold time"));
-        let hold = &mut app.ui.tool_options.smart_shape_hold_ms;
-        ui.add(egui::Slider::new(hold, HOLD_RANGE).step_by(50.0).suffix(" ms"));
+    resp.context_menu(|ui| settings(app, ui));
+}
+
+/// The settings popup (right-click on the button): cleanup strength, correction types and the hold
+/// time. Remembered between launches with the other tool options (`tool_memory`).
+fn settings(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+    let o = &mut app.ui.tool_options;
+    ui.strong(tl!("Cleanup Strength"));
+    ui.add_enabled_ui(o.smart_shape_freeform, |ui| {
+        ui.horizontal(|ui| {
+            for s in Strength::ALL {
+                ui.selectable_value(&mut o.smart_shape_strength, s, tl!(s.label()));
+            }
+        });
     });
+    ui.separator();
+    ui.strong(tl!("Correction Types"));
+    ui.checkbox(&mut o.smart_shape_geometric, tl!("Geometric Shapes"));
+    ui.checkbox(&mut o.smart_shape_freeform, tl!("Freeform Cleanup"));
+    if !o.smart_shape_geometric && !o.smart_shape_freeform {
+        ui.weak(tl!("Both off: holding still leaves strokes exactly as drawn."));
+    }
+    ui.separator();
+    ui.label(tl!("Smart Shape hold time"));
+    ui.add(egui::Slider::new(&mut o.smart_shape_hold_ms, HOLD_RANGE).step_by(50.0).suffix(" ms"));
 }
 
 #[cfg(test)]
