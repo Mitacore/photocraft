@@ -3131,3 +3131,7 @@ curves	Smooth	Lisser
 # Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Synchroniser la vue
 	Sync View — Open a synchronized window	Synchroniser la vue — ouvrir une fenêtre synchronisée
+
+# Smart Shape (Brush and Pencil options bar)
+	Smart Shape — Hold at the end of a stroke to perfect its shape	Forme intelligente — maintenez à la fin d’un tracé pour parfaire sa forme
+	Smart Shape hold time	Durée de maintien de la forme intelligente

@@ -133,6 +133,7 @@ pub static ICONS: &[(&str, &[u8])] = &[
     ("symmetry-vertical", include_bytes!("../../../assets/icons/symmetry-vertical.svg")),
     ("swatch-book", include_bytes!("../../../assets/icons/swatch-book.svg")),
     ("sync-view", include_bytes!("../../../assets/icons/sync-view.svg")),
+    ("smart-shape", include_bytes!("../../../assets/icons/smart-shape.svg")),
     ("text-cursor", include_bytes!("../../../assets/icons/text-cursor.svg")),
     ("toggle-left", include_bytes!("../../../assets/icons/toggle-left.svg")),
     ("toggle-right", include_bytes!("../../../assets/icons/toggle-right.svg")),

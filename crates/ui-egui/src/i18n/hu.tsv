@@ -4051,3 +4051,7 @@ cameraRaw	Yellow	Sárga
 # Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Nézet szinkronizálása
 	Sync View — Open a synchronized window	Nézet szinkronizálása — szinkronizált ablak megnyitása
+
+# Smart Shape (Brush and Pencil options bar)
+	Smart Shape — Hold at the end of a stroke to perfect its shape	Intelligens alakzat — a vonás végén tartva tökéletesíti az alakját
+	Smart Shape hold time	Intelligens alakzat tartási ideje

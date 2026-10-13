@@ -9,11 +9,18 @@ use serde_json::{Value, json};
 use crate::PhotocraftApp;
 use crate::state::View;
 
-/// The synced window and the camera both views were last given (zoom, centre x/y, rotation).
+/// The synced window and the cameras (zoom, centre x/y, rotation) each view had after the last
+/// sync. They are kept apart because the second window can clamp or fit the camera to its own
+/// size; that local adjustment must not travel back and move the main view.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SyncView {
     pub window: u64,
-    pub camera: [f32; 4],
+    pub main: [f32; 4],
+    pub win: [f32; 4],
+    /// The pointer was over the second window this frame: a change of its camera is the user's
+    /// navigation there, so it drives the main view. Set by `canvas::extra_windows`.
+    #[serde(skip)]
+    pub window_input: bool,
 }
 
 pub const COMMAND: &str = "window.arrange.syncView";
@@ -60,7 +67,7 @@ pub fn command(app: &mut PhotocraftApp, p: &Value) -> Result<Value, String> {
     if let Some(w) = app.ui.windows.iter_mut().find(|w| w.id == wid) {
         set_camera(&mut w.view, start);
     }
-    app.ui.view.sync_view = Some(SyncView { window: wid, camera: start });
+    app.ui.view.sync_view = Some(SyncView { window: wid, main: start, win: start, window_input: false });
     Ok(json!({"syncView": true, "window": wid}))
 }
 
@@ -71,10 +78,13 @@ fn stop(app: &mut PhotocraftApp) {
 }
 
 /// Copy whichever camera moved since the last call to the other view (the main view wins if both
-/// did). Turns Sync View off once its window is gone (closed by hand, its document closed, or
-/// Consolidate All to Tabs). Returns true when the main view changed, so it needs a repaint.
+/// did). The second window's camera drives the main view only when the user navigated there
+/// (`window_input`); its own clamping or fitting to a smaller window stays local, so the two
+/// views can never push each other back and forth. Turns Sync View off once its window is gone
+/// (closed by hand, its document closed, or Consolidate All to Tabs). Returns true when the main
+/// view changed, so it needs a repaint.
 pub fn tick(app: &mut PhotocraftApp) -> bool {
-    let Some(s) = app.ui.view.sync_view else { return false };
+    let Some(mut s) = app.ui.view.sync_view else { return false };
     let Some((doc, win)) = app.ui.windows.iter().find(|w| w.id == s.window && w.open).map(|w| (w.document, camera(&w.view))) else {
         app.ui.view.sync_view = None;
         return false;
@@ -83,18 +93,36 @@ pub fn tick(app: &mut PhotocraftApp) -> bool {
         stop(app);
         return false;
     };
-    let next = if main != s.camera { main } else { win };
-    let main_moved = next != main;
-    if main_moved && let Some(v) = app.ui.views.get_mut(doc) {
-        set_camera(v, next);
+    let mut main_moved = false;
+    if main != s.main {
+        // The main view moved: the second window follows.
+        if let Some(w) = app.ui.windows.iter_mut().find(|w| w.id == s.window) {
+            set_camera(&mut w.view, main);
+        }
+        (s.main, s.win) = (main, main);
+    } else if win != s.win {
+        if s.window_input {
+            // Navigation in the second window: the main view follows.
+            if let Some(v) = app.ui.views.get_mut(doc) {
+                set_camera(v, win);
+            }
+            (s.main, s.win) = (win, win);
+            main_moved = true;
+        } else {
+            // The window adjusted its own camera (clamping to its size): keep it there.
+            s.win = win;
+        }
     }
-    if next != win
-        && let Some(w) = app.ui.windows.iter_mut().find(|w| w.id == s.window)
-    {
-        set_camera(&mut w.view, next);
-    }
-    app.ui.view.sync_view = Some(SyncView { camera: next, ..s });
+    s.window_input = false;
+    app.ui.view.sync_view = Some(s);
     main_moved
+}
+
+/// Note that the pointer is over the second window this frame (`canvas::extra_windows`).
+pub(crate) fn note_window_input(app: &mut PhotocraftApp, window: u64, input: bool) {
+    if let Some(s) = app.ui.view.sync_view.as_mut().filter(|s| s.window == window) {
+        s.window_input |= input;
+    }
 }
 
 pub const TOOLTIP: &str = "Sync View — Open a synchronized window";

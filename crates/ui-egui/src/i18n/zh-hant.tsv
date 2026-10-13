@@ -2723,3 +2723,7 @@ curves	Smooth	平滑
 # Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	同步檢視
 	Sync View — Open a synchronized window	同步檢視 — 開啟同步視窗
+
+# Smart Shape (Brush and Pencil options bar)
+	Smart Shape — Hold at the end of a stroke to perfect its shape	智慧形狀 — 在筆畫結尾停住即可修正形狀
+	Smart Shape hold time	智慧形狀停留時間

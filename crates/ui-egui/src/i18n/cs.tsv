@@ -3738,3 +3738,7 @@ navigator	Zoom	Zvětšení
 # Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Synchronizovat zobrazení
 	Sync View — Open a synchronized window	Synchronizovat zobrazení — otevřít synchronizované okno
+
+# Smart Shape (Brush and Pencil options bar)
+	Smart Shape — Hold at the end of a stroke to perfect its shape	Chytrý tvar — podržením na konci tahu zdokonalíte jeho tvar
+	Smart Shape hold time	Doba podržení chytrého tvaru

@@ -3827,3 +3827,7 @@ curves	Smooth	Εξομάλυνση
 # Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Συγχρονισμός προβολής
 	Sync View — Open a synchronized window	Συγχρονισμός προβολής — άνοιγμα συγχρονισμένου παραθύρου
+
+# Smart Shape (Brush and Pencil options bar)
+	Smart Shape — Hold at the end of a stroke to perfect its shape	Έξυπνο σχήμα — κρατήστε στο τέλος μιας πινελιάς για να τελειοποιήσετε το σχήμα της
+	Smart Shape hold time	Χρόνος κράτησης έξυπνου σχήματος

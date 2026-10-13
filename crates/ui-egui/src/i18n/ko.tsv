@@ -3303,3 +3303,7 @@ curves	Smooth	매끄럽게
 # Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	보기 동기화
 	Sync View — Open a synchronized window	보기 동기화 — 동기화된 창 열기
+
+# Smart Shape (Brush and Pencil options bar)
+	Smart Shape — Hold at the end of a stroke to perfect its shape	스마트 모양 — 획 끝에서 누르고 있으면 모양을 다듬습니다
+	Smart Shape hold time	스마트 모양 대기 시간

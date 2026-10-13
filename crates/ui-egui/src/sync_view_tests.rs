@@ -88,21 +88,35 @@ fn zoom_pan_and_rotation_follow_both_ways() {
     assert!(!tick(&mut app), "the main view didn't need a change");
     let w = synced(&app).view.clone();
     assert_eq!((w.zoom, w.center, w.rotation), (2.0, [10.0, 20.0], 28.0));
-    // Second window → main window.
+    // Second window → main window, when the user navigated there (pointer over it).
     let id = window(&app).unwrap();
     if let Some(w) = app.ui.windows.iter_mut().find(|w| w.id == id) {
         w.view.zoom = 0.5;
         w.view.center = [300.0, 200.0];
         w.view.rotation = -45.0;
     }
+    note_window_input(&mut app, id, true);
     assert!(tick(&mut app), "the main view moved: repaint");
     let v = &app.ui.views[0];
     assert_eq!((v.zoom, v.center, v.rotation), (0.5, [300.0, 200.0], -45.0));
+    // The window clamping its own camera (no pointer there) stays local: no feedback loop.
+    if let Some(w) = app.ui.windows.iter_mut().find(|w| w.id == id) {
+        w.view.center = [310.0, 190.0];
+    }
+    assert!(!tick(&mut app));
+    assert_eq!(app.ui.views[0].center, [300.0, 200.0], "the main view stays put");
+    assert_eq!(synced(&app).view.center, [310.0, 190.0], "the window keeps its own adjustment");
+    assert!(!tick(&mut app), "and nothing bounces back on the next frame");
+    // The main view moving again re-syncs the window.
+    app.ui.views[0].center = [305.0, 205.0];
+    tick(&mut app);
+    assert_eq!(synced(&app).view.center, [305.0, 205.0]);
     // Both moved in the same frame: the main window wins, and both end equal.
     app.ui.views[0].zoom = 3.0;
     if let Some(w) = app.ui.windows.iter_mut().find(|w| w.id == id) {
         w.view.zoom = 4.0;
     }
+    note_window_input(&mut app, id, true);
     tick(&mut app);
     assert_eq!((app.ui.views[0].zoom, synced(&app).view.zoom), (3.0, 3.0));
     // Nothing moved: nothing changes.
@@ -137,7 +151,7 @@ fn clicking_again_closes_only_the_second_window() {
 /// symmetry button, in the same row), for any tool, and is disabled with no document.
 #[test]
 fn the_button_sits_at_the_end_of_the_options_bar() {
-    use egui_kittest::kittest::Queryable;
+    use egui_kittest::kittest::{NodeT, Queryable};
     let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1600.0, 900.0)).with_max_steps(64).build_eframe(|cc| {
         PhotocraftApp::setup_context(&cc.egui_ctx, Default::default());
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
@@ -155,7 +169,9 @@ fn the_button_sits_at_the_end_of_the_options_bar() {
     let (sync, symmetry) = (sync.rect(), h.get_by_label("Set painting symmetry options").rect());
     assert!(sync.left() >= symmetry.right(), "right of the symmetry button: {sync:?} / {symmetry:?}");
     assert!((sync.center().y - symmetry.center().y).abs() < 2.0, "same row: {sync:?} / {symmetry:?}");
-    assert!(sync.left() - symmetry.right() < 16.0, "right next to it");
+    // The Brush's last control before it is the Smart Shape toggle: Sync View ends the bar.
+    let smart = h.get_by_label(crate::smart_shape::TOOLTIP).rect();
+    assert!(sync.left() >= smart.right() && sync.left() - smart.right() < 16.0, "right after Smart Shape: {sync:?} / {smart:?}");
     assert_eq!((sync.width().round(), sync.height().round()), (24.0, 24.0), "the bar's icon size");
     // Every tool's bar ends with it (tools whose bars return early included).
     for tool in [crate::state::Tool::Move, crate::state::Tool::Hand, crate::state::Tool::Pen, crate::state::Tool::SpotHealing, crate::state::Tool::Crop] {

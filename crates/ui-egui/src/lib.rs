@@ -191,6 +191,7 @@ pub mod stroke_ui;
 pub mod stylus;
 pub mod swap_arrow;
 pub mod swatches_ui;
+pub mod smart_shape;
 pub mod symmetry_ui;
 pub mod sync_view;
 mod tab_strip;

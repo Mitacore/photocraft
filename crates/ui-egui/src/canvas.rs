@@ -160,6 +160,9 @@ pub struct Drag {
     /// every Move-tool drag with a selection does (`move_ui::moves_selected_pixels_with`).
     pub sel_move: Option<bool>,
     pub lasso: Option<crate::lasso_ui::Lasso>,
+    /// Smart Shape on a Brush or Pencil stroke: the hold timer and, once held, the corrected
+    /// shape whose points replace the freehand ones (smart_shape.rs).
+    pub smart: Option<crate::smart_shape::Hold>,
 }
 
 impl Drag {
@@ -177,6 +180,7 @@ impl Drag {
             reposition: false,
             sel_move: None,
             lasso: None,
+            smart: None,
         }
     }
 
@@ -505,6 +509,10 @@ fn stroke_params(app: &PhotocraftApp, d: &Drag, points: &[Vec<f64>]) -> serde_js
     if crate::eraser_ui::block_mode(app, tool) {
         p["block"] = json!(true);
     }
+    // A Smart Shape is already clean: smoothing would only round its corners and lag its ends.
+    if crate::smart_shape::is_shape(d) {
+        p["smoothing"] = json!(0.0);
+    }
     p
 }
 
@@ -673,6 +681,12 @@ fn feed_live_stroke(app: &mut PhotocraftApp) {
     if app.defer_live_stroke {
         return;
     }
+    // Smart Shape replaced the stroke's points: preview it afresh from the document, so the
+    // freehand marks go rather than stay under the shape.
+    if crate::smart_shape::take_rebuild(app) {
+        app.live_stroke = if app.drag.as_ref().is_some_and(|d| strokes_live(d.tool)) { begin_live_stroke(app) } else { None };
+        return;
+    }
     let (Some(l), Some(d)) = (app.live_stroke.as_mut(), app.drag.as_ref()) else { return };
     let pose = &app.stylus.stroke;
     // The same times `stroke_points` gives the commit (from the drag's first point).
@@ -695,6 +709,12 @@ fn feed_live_stroke(app: &mut PhotocraftApp) {
         Ok(r) => l.damage.push(r),
         Err(_) => app.live_stroke = None,
     }
+}
+
+/// The document the live stroke shows, and how many drag points it has rendered.
+#[cfg(test)]
+pub(crate) fn live_stroke_state(app: &PhotocraftApp) -> Option<(std::sync::Arc<photocraft_doc::Document>, usize)> {
+    app.live_stroke.as_ref().map(|l| (l.stroke.doc().clone(), l.fed))
 }
 
 /// The points the live retouching stroke has rendered.
@@ -3376,6 +3396,15 @@ pub fn canvas_view(app: &mut PhotocraftApp, ui: &mut egui::Ui, idx: usize, rect:
             }
             app.stylus.clear_selection();
             app.stylus.clock_ms = now_ms;
+            // Smart Shape: Esc puts a corrected shape back to the freehand stroke; otherwise a
+            // stroke resting long enough is corrected, and the UI wakes when the hold is due.
+            if app.drag.is_some() && !buttons.stopped {
+                if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
+                    crate::smart_shape::revert(app);
+                } else if let Some(wait) = crate::smart_shape::tick(app) {
+                    ctx.request_repaint_after(wait);
+                }
+            }
             // A held pen keeps the clock running for airbrush build-up and smoothing catch-up.
             if app.drag.is_some() && stroke_wants_time(app) {
                 ctx.request_repaint_after(std::time::Duration::from_millis(HOLD_REPEAT_MS as u64));
@@ -4713,6 +4742,10 @@ fn tool_move(app: &mut PhotocraftApp, x: f64, y: f64, pressure: f32, mods: egui:
         // ⇧: straight 0/45/90° strokes, 45° gradient angles (stroke_constraint.rs).
         let last = d.points.last().map_or(d.start, |p| [p[0], p[1]]);
         let [x, y] = crate::stroke_constraint::constrain(d.tool, &mut d.constrain, d.start, last, [x, y], mods.shift, zoom);
+        // Smart Shape: once the stroke became a shape, the pointer adjusts the shape instead.
+        if crate::smart_shape::pointer_moved(d, [x, y], app.stylus.clock_ms, zoom) {
+            return;
+        }
         let moved = d.points.last().is_none_or(|p| (p[0] - x).abs() + (p[1] - y).abs() > 0.25);
         // A held pen repeats its point now and then, so the stroke's time keeps advancing.
         let held = app.stylus.last_point_ms().is_some_and(|t| app.stylus.clock_ms - t >= HOLD_REPEAT_MS)
@@ -5077,7 +5110,9 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
             }
             // ⌥ flips Dodge/Burn and Blur/Sharpen for this stroke.
             let tool = crate::retouch_ui::alt_flipped(tool, mods.alt);
-            app.drag = Some(Drag { clear, ..Drag::new(tool, from.map_or([x, y], |p| [p[0], p[1]]), points, mods, erase) });
+            // Brush and Pencil: hold still at the end to correct the shape (smart_shape.rs).
+            let smart = crate::smart_shape::start(app, tool, from.is_some(), [x, y]);
+            app.drag = Some(Drag { clear, smart, ..Drag::new(tool, from.map_or([x, y], |p| [p[0], p[1]]), points, mods, erase) });
             app.trail = None;
             app.stylus.begin_stroke();
             if from.is_some() {
@@ -5127,7 +5162,9 @@ pub fn tool_event(app: &mut PhotocraftApp, ev: ToolEvent, mods: egui::Modifiers)
                 }
                 return;
             }
-            if d.points.last().is_none_or(|p| p[0] != x || p[1] != y) {
+            // A Smart Shape takes the release position itself; nothing freehand is added to it.
+            let shaped = crate::smart_shape::release(app, &mut d, [x, y]);
+            if !shaped && d.points.last().is_none_or(|p| p[0] != x || p[1] != y) {
                 d.points.push([x, y, d.points.last().map_or(1.0, |p| p[2])]);
                 app.stylus.record_point();
             }
@@ -5482,15 +5519,19 @@ pub fn extra_windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
         }
         let mut view = w.view.clone();
         let mut close = false;
+        let mut pointer_here = false;
         ctx.show_viewport_immediate(vid, builder, |ui, _class| {
             if ui.ctx().input(|i| i.viewport().close_requested()) {
                 close = true;
             }
+            // Sync View: navigation here (wheel, Hand, scroll bars) needs the pointer here.
+            pointer_here = ui.ctx().input(|i| i.pointer.hover_pos().is_some());
             egui::CentralPanel::default().frame(egui::Frame::NONE.fill(crate::theme::Tokens::get(ui.ctx()).canvas)).show(ui, |ui| {
                 let rect = ui.available_rect_before_wrap();
                 view = canvas_view(app, ui, w.document, rect, view.clone(), false);
             });
         });
+        crate::sync_view::note_window_input(app, w.id, pointer_here);
         if let Some(win) = app.ui.windows.iter_mut().find(|x| x.id == w.id) {
             win.view = view;
             if close {

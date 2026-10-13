@@ -39,10 +39,14 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
 
+      # Each check runs even if an earlier one failed, so one run reports every problem; the job
+      # still fails (and the zip is not built) if any of them does.
       - name: Clippy photocraft-ui-egui
+        if: ${{ !cancelled() }}
         run: cargo clippy -p photocraft-ui-egui --all-targets --locked -- -D warnings
 
       - name: Test photocraft-ui-egui (lib + integration tests)
+        if: ${{ !cancelled() }}
         run: cargo test -p photocraft-ui-egui --lib --tests --locked
 
   # Offscreen screenshots of the real UI (the project's snapshot example) to check where the Sync

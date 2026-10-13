@@ -4094,3 +4094,7 @@ navigator	Zoom	Zoom
 # Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Sincronizza vista
 	Sync View — Open a synchronized window	Sincronizza vista — apri una finestra sincronizzata
+
+# Smart Shape (Brush and Pencil options bar)
+	Smart Shape — Hold at the end of a stroke to perfect its shape	Forma intelligente — tieni premuto alla fine di un tratto per perfezionarne la forma
+	Smart Shape hold time	Tempo di attesa della forma intelligente

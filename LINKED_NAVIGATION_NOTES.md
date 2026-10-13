@@ -52,6 +52,46 @@ Started from the starter patch `photocraft-linked-navigation.patch`, applied by 
 - The second window shows the document but has no painting tools. This is how PhotoCraft's existing
   New Window for Document works.
 
+## Smart Shape (Brush and Pencil options bar, off by default)
+- **Behaviour:** draw, then keep the pointer still for the hold time and the stroke becomes a line, curve, circle,
+  ellipse, rectangle or square.
+  - The hold time is 700 ms by default. Right-click the button to set it from 300 to 2000 ms.
+  - The pointer counts as still within 6 screen points.
+  - While still held, dragging adjusts the shape. A line or curve moves its end. A closed shape scales and turns
+    about its centre (a circle only scales).
+  - Releasing commits one `paint.stroke`, which is one Undo step. Releasing early keeps the freehand stroke as
+    drawn.
+  - Esc while a shape shows puts the freehand stroke back.
+  - ⇧ lines and ⇧-click connections are left alone.
+- **Integration:**
+  - `Drag::smart` holds the hold state.
+  - `tool_move` passes moves to the shape once one is showing. The Up path doesn't add the freehand release point.
+  - `feed_live_stroke` restarts the live preview from the document when the points are replaced, so the freehand
+    marks vanish instead of staying under the shape.
+  - `stroke_params` sends `"smoothing": 0` for a shape. The brush setting itself is untouched.
+  - Pen pressure, tilt and rotation map from the freehand stroke by arc-length fraction.
+  - The per-frame `tick` in `canvas_view` wakes the UI with `request_repaint_after` when the hold is due.
+- **Recognition** (`smart_shape.rs`) is clean-room, from published methods. No third-party code is used and no
+  dependency was added. The stroke is resampled to 64 points by arc length.
+  - **Line:** principal-axis fit. The spread must be ≤ 3 % of the extent, and the stroke must not double back.
+  - **Curve:** cubic Bézier least squares with Newton reparameterisation (Schneider, Graphics Gems 1990). It needs
+    no corners and at most 270° of turning.
+  - **Circle and ellipse:** principal axes plus extents, accepted on the mean radial error.
+  - **Rectangle and square:** 4 corners found as local maxima of the windowed turning angle. The orientation is
+    averaged modulo 90°. Each side is the mean of the outline points nearest to it.
+  - **Size limits:** strokes under 16 screen points, and anything that fits no shape well enough (handwriting,
+    zig-zags, L shapes, triangles, spirals), stay freehand.
+- **References and licences checked:**
+  - Clip Studio Paint Smart Shape and Procreate QuickShape help pages: behaviour only.
+  - CharlesCheval/supernote-snap: **CC BY-NC-SA 4.0**. Incompatible with MIT/Apache, so it is a behaviour
+    reference only and no code was taken.
+  - sibaiper/perfect_freehand (MIT, a Rust port of perfect-freehand): it builds a stroke outline polygon. That is
+    not shape recognition, and it doesn't fit PhotoCraft's dab-based brush engine, so it is not used.
+  - linebender/kurbo (Apache-2.0/MIT, already in Cargo.lock transitively) has curve fitting. A plain cubic fit was
+    small enough to write directly, so it is not added as a dependency.
+- **Files:** `smart_shape.rs`, `smart_shape_tests.rs`, `assets/icons/smart-shape.svg` (original, listed in
+  ATTRIBUTION.md), `canvas.rs`, `state.rs` (`smart_shape`, `smart_shape_hold_ms`), `panels.rs`, `i18n/*.tsv`.
+
 ## channel_view fix (upstream flaky test)
 `channel.setVisible` bumps the revision without changing pixels, so `channel_view::ensure` threw away its sampled
 composite on every channel toggle. Upstream, `channel_eyes_reuse_composite_until_pixels_change` failed 4 of 30 runs

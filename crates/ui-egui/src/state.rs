@@ -675,6 +675,13 @@ pub struct ToolOptions {
     /// Pencil › Mode: Clear (see `brush_clear`).
     #[serde(default)]
     pub pencil_clear: bool,
+    /// Brush and Pencil › Smart Shape: hold still at the end of a stroke to turn it into a clean
+    /// line, curve, circle, ellipse, rectangle or square (`smart_shape.rs`). Off by default.
+    #[serde(default)]
+    pub smart_shape: bool,
+    /// How long the pointer must rest before Smart Shape corrects the stroke, in milliseconds.
+    #[serde(default = "default_smart_shape_hold_ms")]
+    pub smart_shape_hold_ms: f32,
     /// Eraser › Mode: `brush` (soft, anti-aliased) or `pencil` (hard, aliased pixels, through
     /// `paint.pencil`), as in Photoshop's options bar (#2662).
     #[serde(default = "default_eraser_mode")]
@@ -747,6 +754,10 @@ fn one_u32() -> u32 {
 
 fn default_eyedropper_sample() -> String {
     "all".into()
+}
+
+pub(crate) fn default_smart_shape_hold_ms() -> f32 {
+    crate::smart_shape::DEFAULT_HOLD_MS
 }
 
 impl Default for ToolOptions {
@@ -838,6 +849,8 @@ impl Default for ToolOptions {
             pencil_auto_erase: false,
             brush_clear: false,
             pencil_clear: false,
+            smart_shape: false,
+            smart_shape_hold_ms: default_smart_shape_hold_ms(),
             eraser_mode: default_eraser_mode(),
             magnetic_width: 10.0,
             magnetic_contrast: 10.0,

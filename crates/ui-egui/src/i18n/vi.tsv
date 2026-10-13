@@ -3615,3 +3615,7 @@ curves	Smooth	Làm mượt
 # Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Đồng bộ chế độ xem
 	Sync View — Open a synchronized window	Đồng bộ chế độ xem — mở cửa sổ đồng bộ
+
+# Smart Shape (Brush and Pencil options bar)
+	Smart Shape — Hold at the end of a stroke to perfect its shape	Hình dạng thông minh — giữ ở cuối nét để hoàn thiện hình dạng
+	Smart Shape hold time	Thời gian giữ hình dạng thông minh

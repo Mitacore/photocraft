@@ -3862,3 +3862,7 @@ cameraData	Lens	Lens
 # Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Görünümü eşitle
 	Sync View — Open a synchronized window	Görünümü eşitle — eşitlenmiş pencere aç
+
+# Smart Shape (Brush and Pencil options bar)
+	Smart Shape — Hold at the end of a stroke to perfect its shape	Akıllı Şekil — şeklini mükemmelleştirmek için vuruşun sonunda basılı tutun
+	Smart Shape hold time	Akıllı Şekil bekleme süresi

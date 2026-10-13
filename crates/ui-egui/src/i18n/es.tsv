@@ -2813,3 +2813,7 @@ curves	Smooth	Suavizar
 # Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Sincronizar vista
 	Sync View — Open a synchronized window	Sincronizar vista — abrir una ventana sincronizada
+
+# Smart Shape (Brush and Pencil options bar)
+	Smart Shape — Hold at the end of a stroke to perfect its shape	Forma inteligente — mantén al final de un trazo para perfeccionar su forma
+	Smart Shape hold time	Tiempo de espera de la forma inteligente

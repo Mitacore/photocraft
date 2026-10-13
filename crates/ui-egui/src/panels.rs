@@ -1494,6 +1494,10 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 if matches!(tool, Tool::Brush | Tool::Pencil | Tool::Eraser) {
                     crate::symmetry_ui::menu(app, ui);
                 }
+                // Brush and Pencil: Smart Shape closes the brush controls (smart_shape.rs).
+                if matches!(tool, Tool::Brush | Tool::Pencil) {
+                    crate::smart_shape::button(app, ui);
+                }
                 crate::brush_panel::commit_gesture(app, ui.ctx(), &brush_before, &brush);
                 crate::sync_view::button(app, ui);
             });

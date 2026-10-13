@@ -3807,3 +3807,7 @@ curves	Smooth	スムーズ
 # Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	ビューを同期
 	Sync View — Open a synchronized window	ビューを同期 — 同期したウィンドウを開く
+
+# Smart Shape (Brush and Pencil options bar)
+	Smart Shape — Hold at the end of a stroke to perfect its shape	スマートシェイプ — ストロークの終わりで止めると形を整えます
+	Smart Shape hold time	スマートシェイプの待機時間
