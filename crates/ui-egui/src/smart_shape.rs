@@ -828,13 +828,16 @@ fn sharp_corners(pts: &[P], k: usize, closed: bool) -> Vec<usize> {
     }
     let range: Vec<usize> = if closed { (0..n).collect() } else { (k..n - k).collect() };
     let turns: Vec<(usize, f64)> = range.into_iter().map(|i| (i, local_turn(pts, i, k, closed))).collect();
+    // The turn over half the window, at the sample or a neighbour (one jittery sample must not hide
+    // a corner).
+    let half = |i: usize| (i.saturating_sub(1)..=i + 1).map(|j| local_turn(pts, j, (k / 2).max(1), closed)).fold(0.0, f64::max);
     let near = |i: usize, j: usize| {
         let d = i.abs_diff(j);
         if closed { d.min(n - d) <= k } else { d <= k }
     };
     turns
         .iter()
-        .filter(|&&(i, a)| a >= FREEFORM_CORNER && local_turn(pts, i, (k / 2).max(1), closed) >= 0.7 * a)
+        .filter(|&&(i, a)| a >= FREEFORM_CORNER && half(i) >= 0.7 * a)
         .filter(|&&(i, a)| a >= 0.7 * local_turn(pts, i, if closed { 2 * k } else { (2 * k).min(i).min(n - 1 - i) }, closed))
         .filter(|&&(i, a)| !turns.iter().any(|&(j, b)| j != i && near(i, j) && (b > a || (b == a && j < i))))
         .map(|&(i, _)| i)

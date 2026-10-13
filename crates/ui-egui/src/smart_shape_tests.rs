@@ -411,7 +411,8 @@ fn connected_angular_strokes_become_polylines_with_exact_corners() {
     }));
     let drawn = noisy(&v, 4.0, 1.5);
     let s = recognize(&drawn, 1.0).expect("cleaned");
-    assert_eq!(s.kind(), "freeform", "{s:?}");
+    let corners = fine_samples(&drawn, 320.0, 1.0).map(|(f, k)| sharp_corners(&f, k, false).iter().filter_map(|&i| f.get(i).copied()).collect::<Vec<P>>());
+    assert_eq!(s.kind(), "freeform", "corners found: {corners:?}");
     assert_follows(&s, &v, 5.0, 5.0);
     assert!(s.points().iter().any(|q| dist(*q, [150.0, 250.0]) < 5.0), "the corner stays sharp");
 }
