@@ -29,8 +29,12 @@
 //!   outlines split at their two farthest points), vertices kept only where the stroke turns
 //!   sharply, then made exact as the meeting points of lines fitted to each side;
 //! - closed candidates compete on the mean distance of the stroke from their outline, and each
-//!   also has its own limit; anything nothing fits (handwriting, zig-zags, spirals, tiny marks)
-//!   stays a freehand stroke.
+//!   also has its own limit;
+//! - anything no geometric shape fits (long mixed paths, waves, zigzags, hairpins, narrow loops,
+//!   spirals) gets freeform cleanup: cut at its sharp corners (found at two scales) and refitted
+//!   with tangent-continuous cubic pieces within a small distance of the stroke, so it keeps its
+//!   course, ends, peaks and corners and loses only the jitter. Marks too small on screen stay as
+//!   drawn.
 
 use std::time::Duration;
 
@@ -74,6 +78,16 @@ const VERTEX_TURN: f64 = 0.6; // 34°
 /// Most cubic pieces a smoothed curve may have, and most vertices of a polygon or polyline.
 pub const MAX_SEGMENTS: usize = 8;
 pub const MAX_POLY: usize = 5;
+/// Most cubic pieces a freeform cleanup may have.
+pub const MAX_FREEFORM: usize = 64;
+/// Freeform cleanup: largest distance of the cleaned path from the stroke, as a fraction of its
+/// size (at least [`FREEFORM_TOL_MIN`] document pixels). Small enough to keep every intended bend,
+/// large enough to iron out a hand's jitter.
+const FREEFORM_TOL: f64 = 0.008;
+const FREEFORM_TOL_MIN: f64 = 2.0;
+/// A freeform corner turns at least this much (radians) over its window, and stays sharp over half
+/// of it.
+const FREEFORM_CORNER: f64 = 1.0; // 57°
 
 type P = [f64; 2];
 
@@ -94,6 +108,14 @@ pub enum Shape {
     /// open polyline (an L, a V, a zig of up to four edges).
     Poly {
         v: [P; MAX_POLY],
+        n: usize,
+        closed: bool,
+    },
+    /// Freeform cleanup of a stroke no geometric shape fits: `n` cubic Béziers following it, smooth
+    /// within each run and meeting at its sharp corners (peaks, zigzag tips). Ends where it began
+    /// when `closed`.
+    Freeform {
+        seg: [[P; 4]; MAX_FREEFORM],
         n: usize,
         closed: bool,
     },
@@ -123,6 +145,7 @@ impl Shape {
         match self {
             Shape::Line { .. } => "line",
             Shape::Spline { .. } => "curve",
+            Shape::Freeform { .. } => "freeform",
             Shape::Poly { n: 3, closed: true, .. } => "triangle",
             Shape::Poly { closed: true, .. } => "quadrilateral",
             Shape::Poly { .. } => "polyline",
@@ -138,6 +161,8 @@ impl Shape {
         match self {
             Shape::Line { a, .. } => *a,
             Shape::Spline { seg, .. } => seg[0][0],
+            Shape::Freeform { seg, closed: false, .. } => seg[0][0],
+            Shape::Freeform { seg, n, closed: true } => mean(&seg.iter().take(*n).map(|s| s[0]).collect::<Vec<_>>()),
             Shape::Poly { v, closed: false, .. } => v[0],
             Shape::Poly { v, n, closed: true } => mean(v.get(..*n).unwrap_or_default()),
             Shape::Ellipse { c, .. } | Shape::Rect { c, .. } => *c,
@@ -149,6 +174,7 @@ impl Shape {
         match self {
             Shape::Line { b, .. } => Some(*b),
             Shape::Spline { seg, n } => seg.get(n.saturating_sub(1)).map(|s| s[3]),
+            Shape::Freeform { seg, n, closed: false } => seg.get(n.saturating_sub(1)).map(|s| s[3]),
             Shape::Poly { v, n, closed: false } => v.get(n.saturating_sub(1)).copied(),
             _ => None,
         }
@@ -164,6 +190,7 @@ impl Shape {
         match *self {
             Shape::Line { a, b } => Shape::Line { a: map(a), b: map(b) },
             Shape::Spline { seg, n } => Shape::Spline { seg: seg.map(|s| s.map(map)), n },
+            Shape::Freeform { seg, n, closed } => Shape::Freeform { seg: seg.map(|s| s.map(map)), n, closed },
             Shape::Poly { v, n, closed } => Shape::Poly { v: v.map(map), n, closed },
             Shape::Ellipse { c, rx, ry, angle, start, ccw } => Shape::Ellipse { c: map(c), rx: rx * s, ry: ry * s, angle: angle + rot, start, ccw },
             Shape::Rect { c, hw, hh, angle, start, ccw } => Shape::Rect { c: map(c), hw: hw * s, hh: hh * s, angle: angle + rot, start, ccw },
@@ -178,17 +205,8 @@ impl Shape {
                 let n = count(dist(a, b), 2, 2000);
                 (0..n).map(|i| lerp(a, b, i as f64 / (n - 1) as f64)).collect()
             }
-            Shape::Spline { seg, n } => {
-                let mut out = Vec::new();
-                for p in seg.iter().take(n) {
-                    let rough: f64 = (0..16).map(|i| dist(bezier(p, i as f64 / 16.0), bezier(p, (i + 1) as f64 / 16.0))).sum();
-                    let m = count(rough, 4, 4000);
-                    // Each piece starts where the last ended: that point is kept once.
-                    let skip = usize::from(!out.is_empty());
-                    out.extend((skip..m).map(|i| bezier(p, i as f64 / (m - 1) as f64)));
-                }
-                out
-            }
+            Shape::Spline { seg, n } => pieces_points(seg.get(..n).unwrap_or_default()),
+            Shape::Freeform { seg, n, .. } => pieces_points(seg.get(..n).unwrap_or_default()),
             Shape::Poly { v, n, closed } => {
                 let v = v.get(..n).unwrap_or_default();
                 let mut out = Vec::new();
@@ -236,6 +254,19 @@ impl Shape {
             }
         }
     }
+}
+
+/// Cubic pieces as a polyline about [`SPACING`] apart; each piece starts where the last ended, so
+/// that point is kept once.
+fn pieces_points(pieces: &[[P; 4]]) -> Vec<P> {
+    let mut out = Vec::new();
+    for p in pieces {
+        let rough: f64 = (0..16).map(|i| dist(bezier(p, i as f64 / 16.0), bezier(p, (i + 1) as f64 / 16.0))).sum();
+        let m = ((rough / SPACING).ceil() as usize).clamp(4, 4000);
+        let skip = usize::from(!out.is_empty());
+        out.extend((skip..m).map(|i| bezier(p, i as f64 / (m - 1) as f64)));
+    }
+    out
 }
 
 /// The four corners of a rectangle, in order around it.
@@ -426,14 +457,23 @@ fn fit_tangent(pts: &[P], t1: P, t2: P) -> Option<([P; 4], f64, usize)> {
     (ctrl.iter().all(|c| c[0].is_finite() && c[1].is_finite()) && err.is_finite()).then_some((ctrl, err, at))
 }
 
+/// How finely [`fit_pieces`] may split: the error each piece aims for, how many times it may halve
+/// (2^`max_depth` pieces at most), and the fewest samples a piece that may still split spans
+/// (at least 8).
+#[derive(Clone, Copy)]
+struct Fit {
+    tol: f64,
+    max_depth: u32,
+    min_span: usize,
+}
+
 /// Fit `pts[lo..=hi]` with tangent-continuous cubic pieces, splitting at the worst point until
-/// each piece is within `tol` (at most three splits deep, so at most [`MAX_SEGMENTS`] pieces).
-/// Returns the largest error left.
+/// each piece is within `fit.tol`. Returns the largest error left.
 #[allow(clippy::too_many_arguments)]
-fn fit_pieces(pts: &[P], lo: usize, hi: usize, t1: P, t2: P, tol: f64, depth: u32, out: &mut Vec<[P; 4]>) -> f64 {
+fn fit_pieces(pts: &[P], lo: usize, hi: usize, t1: P, t2: P, fit: Fit, depth: u32, out: &mut Vec<[P; 4]>) -> f64 {
     let Some(part) = pts.get(lo..=hi) else { return f64::MAX };
     let Some((ctrl, err, at)) = fit_tangent(part, t1, t2) else { return f64::MAX };
-    if err <= tol || hi - lo < 12 || depth >= 3 {
+    if err <= fit.tol || hi - lo < fit.min_span.max(8) || depth >= fit.max_depth {
         out.push(ctrl);
         return err;
     }
@@ -442,8 +482,8 @@ fn fit_pieces(pts: &[P], lo: usize, hi: usize, t1: P, t2: P, tol: f64, depth: u3
         (Some(&a), Some(&b)) => unit(sub(b, a)).unwrap_or(t1),
         _ => t1,
     };
-    let left = fit_pieces(pts, lo, mid, t1, [-tc[0], -tc[1]], tol, depth + 1, out);
-    let right = fit_pieces(pts, mid, hi, tc, t2, tol, depth + 1, out);
+    let left = fit_pieces(pts, lo, mid, t1, [-tc[0], -tc[1]], fit, depth + 1, out);
+    let right = fit_pieces(pts, mid, hi, tc, t2, fit, depth + 1, out);
     left.max(right)
 }
 
@@ -458,7 +498,7 @@ fn fit_spline(pts: &[P], tol: f64) -> Option<Shape> {
     let t1 = unit(sub(*pts.get(3)?, first))?;
     let t2 = unit(sub(*pts.get(n - 4)?, last))?;
     let mut pieces = Vec::new();
-    let err = fit_pieces(pts, 0, n - 1, t1, t2, tol, 0, &mut pieces);
+    let err = fit_pieces(pts, 0, n - 1, t1, t2, Fit { tol, max_depth: 3, min_span: 12 }, 0, &mut pieces);
     if err > 2.0 * tol || pieces.is_empty() || pieces.len() > MAX_SEGMENTS {
         return None;
     }
@@ -670,9 +710,135 @@ fn fit_polyline(pts: &[P], size: f64) -> Option<Shape> {
     (outline_error(&shape, pts, size) <= POLY_TOL).then_some(shape)
 }
 
+/// Sharp corners of `pts` for freeform cleanup: where the turn over `k` samples is at least
+/// [`FREEFORM_CORNER`], still at least 70% of that over half the window (a smooth bend's turn
+/// halves with the window, a real corner's does not), and the largest within the window.
+/// `closed` wraps around.
+fn sharp_corners(pts: &[P], k: usize, closed: bool) -> Vec<usize> {
+    let n = pts.len();
+    if n < 2 * k + 1 {
+        return Vec::new();
+    }
+    let range: Vec<usize> = if closed { (0..n).collect() } else { (k..n - k).collect() };
+    let turns: Vec<(usize, f64)> = range.into_iter().map(|i| (i, local_turn(pts, i, k, closed))).collect();
+    let near = |i: usize, j: usize| {
+        let d = i.abs_diff(j);
+        if closed { d.min(n - d) <= k } else { d <= k }
+    };
+    turns
+        .iter()
+        .filter(|&&(i, a)| a >= FREEFORM_CORNER && local_turn(pts, i, (k / 2).max(1), closed) >= 0.7 * a)
+        .filter(|&&(i, a)| !turns.iter().any(|&(j, b)| j != i && near(i, j) && (b > a || (b == a && j < i))))
+        .map(|&(i, _)| i)
+        .collect()
+}
+
+/// The stroke in even samples about every 0.4% of its size (at least 1 px, 48 to 800 of them):
+/// fine enough for every bend, with the corner window for them (1.5% of the size, at least 8 px).
+fn fine_samples(raw: &[P], size: f64) -> Option<(Vec<P>, usize)> {
+    let len = path_len(raw);
+    if len <= 1e-9 || size <= 1e-9 {
+        return None;
+    }
+    let n = ((len / (size * 0.004).max(1.0)).ceil() as usize).clamp(48, 800);
+    let pts = resample(raw, n);
+    let step = len / (n - 1) as f64;
+    let k = (((size * 0.015).max(8.0) / step).round() as usize).clamp(2, (n / 8).max(2));
+    Some((pts, k))
+}
+
+/// Freeform cleanup for a stroke no geometric shape fits (long mixed paths, waves, zigzags,
+/// hairpins, narrow loops): the same path with the hand's jitter ironed out. It is cut at its sharp
+/// corners (found at two scales, so peaks and zigzag tips stay sharp while smooth bends stay
+/// round) and each run between them becomes tangent-continuous cubic pieces within a small
+/// distance of the stroke (Schneider's fitting), so bends, peaks and valleys keep their place and
+/// height. The ends stay where they were drawn; an open stroke stays open. `None` when even many
+/// pieces can't follow it closely.
+fn freeform(raw: &[P], size: f64, closed: bool) -> Option<Shape> {
+    let (mut pts, k) = fine_samples(raw, size)?;
+    let n = pts.len();
+    let mut smooth_closure = false;
+    if closed {
+        // Close the loop exactly, and start it at a corner when it has one, so the closing point
+        // is a corner too; without any, the closing point gets one tangent on both sides.
+        if let Some(&f) = pts.first()
+            && let Some(l) = pts.last_mut()
+        {
+            *l = f;
+        }
+        let ring = pts.get(..n - 1).unwrap_or_default();
+        match sharp_corners(ring, k, true).first() {
+            Some(&c) => {
+                let mut turned: Vec<P> = ring.iter().skip(c).chain(ring.iter().take(c)).copied().collect();
+                turned.push(*turned.first()?);
+                pts = turned;
+            }
+            None => smooth_closure = true,
+        }
+    }
+    let n = pts.len();
+    let mut breaks = if closed { sharp_corners(pts.get(..n - 1).unwrap_or_default(), k, true) } else { sharp_corners(&pts, k, false) };
+    breaks.push(0);
+    breaks.push(n - 1);
+    breaks.sort_unstable();
+    breaks.dedup();
+    // Direction leaving sample `i` towards sample `j`.
+    let dir = |i: usize, j: usize| -> Option<P> { unit(sub(*pts.get(j)?, *pts.get(i)?)) };
+    let closure = if smooth_closure { dir(n - 4, 3) } else { None };
+    let base = (size * FREEFORM_TOL).max(FREEFORM_TOL_MIN);
+    for tol in [base, base * 1.6, base * 2.6] {
+        let fit = Fit { tol, max_depth: 6, min_span: 8 };
+        let mut pieces: Vec<[P; 4]> = Vec::new();
+        let mut worst: f64 = 0.0;
+        for w in breaks.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let (Some(&pa), Some(&pb)) = (pts.get(a), pts.get(b)) else { return None };
+            if b - a < 4 {
+                pieces.push([pa, lerp(pa, pb, 1.0 / 3.0), lerp(pa, pb, 2.0 / 3.0), pb]);
+                continue;
+            }
+            let m = 3;
+            let t1 = match closure.filter(|_| a == 0) {
+                Some(t) => t,
+                None => dir(a, a + m)?,
+            };
+            let t2 = match closure.filter(|_| b == n - 1) {
+                Some(t) => [-t[0], -t[1]],
+                None => dir(b, b - m)?,
+            };
+            worst = worst.max(fit_pieces(&pts, a, b, t1, t2, fit, 0, &mut pieces));
+        }
+        if pieces.len() <= MAX_FREEFORM && worst <= 2.0 * tol {
+            let mut seg = [[[0.0; 2]; 4]; MAX_FREEFORM];
+            for (slot, piece) in seg.iter_mut().zip(&pieces) {
+                *slot = *piece;
+            }
+            return Some(Shape::Freeform { seg, n: pieces.len(), closed });
+        }
+    }
+    None
+}
+
 /// Signed area (shoelace): negative when the outline runs counter-clockwise on screen (y down).
 fn signed_area(pts: &[P]) -> f64 {
     pts.windows(2).map(|w| w[0][0] * w[1][1] - w[1][0] * w[0][1]).sum::<f64>() / 2.0
+}
+
+/// Does the stroke `pts` (ends already close together) close a loop, rather than double back
+/// beside its start like a narrow U-turn? It does when its last quarter passes close by the start
+/// (an overshooting circle), or its end heads towards the start (a loop left slightly open).
+fn closes_on_itself(pts: &[P], size: f64) -> bool {
+    let (Some(&first), Some(&last)) = (pts.first(), pts.last()) else { return false };
+    let n = pts.len();
+    let passes = pts.iter().skip(n * 3 / 4).any(|&p| dist(p, first) <= 0.05 * size);
+    let k = corner_window(n);
+    let heads = match (pts.get(n.saturating_sub(1 + k)).and_then(|&p| unit(sub(last, p))), unit(sub(first, last))) {
+        (Some(end), Some(to_start)) => dot(end, to_start) > 0.5,
+        // The end is on the start: closed.
+        (_, None) => true,
+        _ => false,
+    };
+    passes || heads
 }
 
 /// Recognise the stroke `raw` (document points) drawn at `zoom` (screen points per document
@@ -687,9 +853,10 @@ pub fn recognize(raw: &[P], zoom: f64) -> Option<Shape> {
     if size * zoom.max(1e-6) < MIN_EXTENT || len <= 1e-9 {
         return None;
     }
-    let closed = dist(first, last) <= CLOSED_GAP * len;
+    let closed = dist(first, last) <= CLOSED_GAP * len && closes_on_itself(&pts, size);
     if !closed {
-        return recognize_open(&pts, &raw, size);
+        // No geometric shape fits: the freeform cleanup of the same path.
+        return recognize_open(&pts, &raw, size).or_else(|| freeform(&raw, size, false));
     }
     // Closed: drop the closing overlap so the outline is one loop.
     let ring: Vec<P> = pts.get(..pts.len().saturating_sub(1)).unwrap_or_default().to_vec();
@@ -706,7 +873,9 @@ pub fn recognize(raw: &[P], zoom: f64) -> Option<Shape> {
     // turns) and a triangle or quadrilateral. The one that follows the stroke more closely wins;
     // each must also pass its own limit, so an outline nothing fits stays freehand.
     let candidates = [if found.len() <= 2 { fit_ellipse(&ring, first, ccw) } else { None }, fit_polygon(&ring, size, first, ccw)];
-    candidates.into_iter().flatten().map(|s| (outline_error(&s, &ring, size), s)).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, s)| s)
+    let best = candidates.into_iter().flatten().map(|s| (outline_error(&s, &ring, size), s)).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, s)| s);
+    // No geometric shape fits (a narrow loop, a long irregular outline): the freeform cleanup.
+    best.or_else(|| freeform(&raw, size, true))
 }
 
 fn recognize_open(pts: &[P], raw: &[P], size: f64) -> Option<Shape> {
@@ -727,9 +896,9 @@ fn recognize_open(pts: &[P], raw: &[P], size: f64) -> Option<Shape> {
         return Some(Shape::Line { a: proj(first), b: proj(last) });
     }
     // Sharp corners: straight edges (an L, a V, a Z), never a curve forced round them. A corner is
-    // sharp when its turn stays as large over half the window; a smooth bend's turn halves with it.
-    let k = corner_window(pts.len());
-    let sharp = corners(pts, false).into_iter().any(|(i, a)| local_turn(pts, i, (k / 2).max(1), false) >= 0.7 * a);
+    // sharp when its turn stays as large over half the window, on fine samples (a smooth bend's
+    // turn halves with the window, so a tight U-turn stays a round U-turn).
+    let sharp = fine_samples(raw, size).is_some_and(|(fine, k)| !sharp_corners(&fine, k, false).is_empty());
     if sharp {
         return fit_polyline(pts, size);
     }

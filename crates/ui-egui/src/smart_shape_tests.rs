@@ -129,13 +129,21 @@ fn recognises_rectangles_and_squares() {
     assert_eq!(s.kind(), "square");
 }
 
+/// Strokes no geometric shape fits are cleaned along their own course, never forced into a
+/// circle, polygon or line: the ends stay put, the course stays within a few pixels, corners stay.
 #[test]
-fn ambiguous_or_accidental_strokes_stay_freehand() {
-    // Handwriting-like zig-zag.
+fn strokes_no_shape_fits_are_cleaned_not_forced() {
+    // A zig-zag of four teeth.
     let tooth = |i: usize| if (i / 5).is_multiple_of(2) { (i % 5) as f64 * 12.0 } else { (5 - i % 5) as f64 * 12.0 };
     let zigzag: Vec<P> = (0..41).map(|i| [20.0 + i as f64 * 5.0, 100.0 + tooth(i)]).collect();
-    assert_eq!(recognize(&zigzag, 1.0), None, "zig-zag");
-    // A spiral (two turns, growing).
+    let s = recognize(&zigzag, 1.0).expect("cleaned");
+    assert_eq!(s.kind(), "freeform", "zig-zag: {s:?}");
+    assert_follows(&s, &zigzag, 4.0, 4.0);
+    for i in [5usize, 15, 25, 35] {
+        let tip = [20.0 + i as f64 * 5.0, 160.0];
+        assert!(s.points().iter().any(|p| dist(*p, tip) < 4.0), "tooth tip {tip:?} kept");
+    }
+    // A spiral (two turns, growing), open.
     let spiral: Vec<P> = (0..120)
         .map(|i| {
             let t = std::f64::consts::TAU * 2.0 * i as f64 / 119.0;
@@ -143,15 +151,237 @@ fn ambiguous_or_accidental_strokes_stay_freehand() {
             [150.0 + r * t.cos(), 150.0 + r * t.sin()]
         })
         .collect();
-    assert_eq!(recognize(&spiral, 1.0), None, "spiral");
+    let s = recognize(&spiral, 1.0).expect("cleaned");
+    assert!(matches!(s.kind(), "curve" | "freeform"), "spiral: {s:?}");
+    assert_follows(&s, &spiral, 4.0, 4.0);
     // A scribble that goes back over itself.
     let back: Vec<P> = (0..40).map(|i| [50.0 + (i as f64 * 0.5).sin() * 60.0, 50.0 + i as f64 * 0.3]).collect();
-    assert_eq!(recognize(&back, 1.0), None, "back and forth");
+    let s = recognize(&back, 1.0).expect("cleaned");
+    assert!(matches!(s.kind(), "curve" | "freeform"), "back and forth: {s:?}");
+    assert_follows(&s, &back, 5.0, 5.0);
     // Degenerate input never panics.
     assert_eq!(recognize(&[], 1.0), None);
     assert_eq!(recognize(&[[5.0, 5.0]], 1.0), None);
     assert_eq!(recognize(&[[5.0, 5.0]; 30], 1.0), None);
     assert_eq!(recognize(&[[f64::NAN, 1.0], [f64::INFINITY, 2.0]], 1.0), None);
+}
+
+/// Distance from `p` to the polyline `poly`.
+fn poly_dist(p: P, poly: &[P]) -> f64 {
+    poly.windows(2).map(|w| seg_dist(p, w[0], w[1])).fold(f64::MAX, f64::min)
+}
+
+/// The cleaned `shape` stays within `dev` of the stroke `drawn` everywhere, and leaves no part of
+/// `drawn` further than `cover` away (nothing cut off or flattened).
+fn assert_follows(shape: &Shape, drawn: &[P], dev: f64, cover: f64) {
+    let out = shape.points();
+    let worst_out = out.iter().map(|&p| poly_dist(p, drawn)).fold(0.0, f64::max);
+    let worst_in = drawn.iter().map(|&p| poly_dist(p, &out)).fold(0.0, f64::max);
+    assert!(worst_out <= dev, "{}: strays {worst_out:.1} px from the stroke", shape.kind());
+    assert!(worst_in <= cover, "{}: leaves the stroke {worst_in:.1} px behind", shape.kind());
+}
+
+/// Deterministic jitter in -0.5..0.5.
+fn jitter(i: usize) -> f64 {
+    ((i as f64 * 12.9898).sin() * 43758.5453).rem_euclid(1.0) - 0.5
+}
+
+/// `clean` as a hand draws it: sampled about every `step` px, each sample off by up to `amp` px.
+fn noisy(clean: &[P], step: f64, amp: f64) -> Vec<P> {
+    let n = ((path_len(clean) / step) as usize).max(2);
+    resample(clean, n).iter().enumerate().map(|(i, p)| [p[0] + 2.0 * amp * jitter(i), p[1] + 2.0 * amp * jitter(i + 7919)]).collect()
+}
+
+/// Total turning (radians) of `pts` resampled to `n` points: jitter adds to it, smoothing removes it.
+fn turning(pts: &[P], n: usize) -> f64 {
+    resample(pts, n)
+        .windows(3)
+        .map(|w| {
+            let (u, v) = (sub(w[1], w[0]), sub(w[2], w[1]));
+            (u[0] * v[1] - u[1] * v[0]).atan2(dot(u, v)).abs()
+        })
+        .sum()
+}
+
+/// A dense polyline through `v` (about 1 px apart).
+fn dense(v: &[P]) -> Vec<P> {
+    let mut out = vec![v[0]];
+    for w in v.windows(2) {
+        let n = (dist(w[0], w[1]).ceil() as usize).max(1);
+        out.extend((1..=n).map(|i| lerp(w[0], w[1], i as f64 / n as f64)));
+    }
+    out
+}
+
+/// The long mixed stroke of the hands-on sketch: three pointed peaks with round valleys, two
+/// smooth waves, a hairpin into a long straight run back, a second hairpin, a straight run and a
+/// zigzag tail. Returns it (about 1 px apart) and the points that must stay sharp.
+fn mixed_stroke() -> (Vec<P>, Vec<P>) {
+    let mut path = dense(&[[100.0, 400.0], [250.0, 400.0]]);
+    // Peaks: height (1 - |u|)^1.5, pointed at u = 0, flat at u = ±1.
+    for hump in 0..3 {
+        let x0 = 250.0 + 160.0 * hump as f64;
+        path.extend((1..=160).map(|i| {
+            let u = (i as f64 - 80.0) / 80.0;
+            [x0 + i as f64, 400.0 - 220.0 * (1.0 - u.abs()).powf(1.5)]
+        }));
+    }
+    // Two smooth waves.
+    path.extend((1..=320).map(|i| [730.0 + i as f64, 400.0 + 40.0 * (std::f64::consts::TAU * i as f64 / 160.0).sin()]));
+    // Hairpin (radius 30) and the long run back.
+    path.extend((1..=94).map(|i| {
+        let a = -std::f64::consts::FRAC_PI_2 + std::f64::consts::PI * i as f64 / 94.0;
+        [1050.0 + 30.0 * a.cos(), 430.0 + 30.0 * a.sin()]
+    }));
+    path.extend(dense(&[[1050.0, 460.0], [300.0, 460.0]]).into_iter().skip(1));
+    // Second hairpin (radius 25), a straight run and a zigzag tail.
+    path.extend((1..=78).map(|i| {
+        let a = -std::f64::consts::FRAC_PI_2 - std::f64::consts::PI * i as f64 / 78.0;
+        [300.0 + 25.0 * a.cos(), 485.0 + 25.0 * a.sin()]
+    }));
+    path.extend(dense(&[[300.0, 510.0], [900.0, 510.0], [950.0, 570.0], [1000.0, 510.0], [1050.0, 570.0]]).into_iter().skip(1));
+    let sharp = vec![[330.0, 180.0], [490.0, 180.0], [650.0, 180.0], [950.0, 570.0], [1000.0, 510.0]];
+    (path, sharp)
+}
+
+#[test]
+fn a_long_mixed_noisy_stroke_is_cleaned_along_its_whole_course() {
+    let (clean, sharp) = mixed_stroke();
+    let drawn = noisy(&clean, 6.0, 2.5);
+    let s = recognize(&drawn, 1.0).expect("cleaned");
+    assert_eq!(s.kind(), "freeform", "{s:?}");
+    assert!(matches!(s, Shape::Freeform { closed: false, .. }), "an open stroke stays open");
+    let out = s.points();
+    // Its ends exactly where the stroke began and ended.
+    assert!(dist(out[0], drawn[0]) < 1e-6 && dist(*out.last().unwrap(), *drawn.last().unwrap()) < 1e-6);
+    // The whole course, within a few pixels of what was meant: nothing truncated or flattened.
+    assert_follows(&s, &clean, 12.0, 12.0);
+    // Peaks and zigzag tips stay pointed.
+    for p in sharp {
+        assert!(out.iter().any(|q| dist(*q, p) < 8.0), "the corner at {p:?} is kept");
+    }
+    // And the jitter is gone: far less turning than the drawn stroke.
+    let (before, after) = (turning(&drawn, 600), turning(&out, 600));
+    assert!(after < 0.5 * before, "turning {before:.1} → {after:.1}");
+}
+
+#[test]
+fn waves_come_out_the_same_whatever_the_sampling_density() {
+    let wave: Vec<P> = (0..=400).map(|i| [50.0 + i as f64, 200.0 + 30.0 * (std::f64::consts::TAU * i as f64 / 100.0).sin()]).collect();
+    for step in [1.5, 4.0, 9.0] {
+        let drawn = noisy(&wave, step, 1.5);
+        let s = recognize(&drawn, 1.0).expect("cleaned");
+        assert!(matches!(s.kind(), "curve" | "freeform"), "step {step}: {s:?}");
+        assert_follows(&s, &wave, 7.0, 7.0);
+        let out = s.points();
+        assert!(dist(out[0], drawn[0]) < 1e-6 && dist(*out.last().unwrap(), *drawn.last().unwrap()) < 1e-6, "step {step}: ends kept");
+        // Every crest and trough keeps its height.
+        for k in 0..4 {
+            let crest = [50.0 + 25.0 + 100.0 * k as f64, 230.0];
+            assert!(out.iter().any(|q| dist(*q, crest) < 6.0), "step {step}: crest {crest:?}");
+        }
+    }
+}
+
+#[test]
+fn a_narrow_hairpin_stays_an_open_round_u_turn() {
+    // Two parallel runs 24 px apart, joined by a round turn: ends close together, yet not a loop.
+    let mut u = dense(&[[100.0, 100.0], [400.0, 100.0]]);
+    u.extend((1..=38).map(|i| {
+        let a = -std::f64::consts::FRAC_PI_2 + std::f64::consts::PI * i as f64 / 38.0;
+        [400.0 + 12.0 * a.cos(), 112.0 + 12.0 * a.sin()]
+    }));
+    u.extend(dense(&[[400.0, 124.0], [100.0, 124.0]]).into_iter().skip(1));
+    let drawn = noisy(&u, 5.0, 1.5);
+    let s = recognize(&drawn, 1.0).expect("cleaned");
+    assert!(s.end().is_some(), "open, not closed into a loop: {s:?}");
+    assert!(matches!(s.kind(), "curve" | "freeform"), "a round turn, not a pointed V: {s:?}");
+    assert_follows(&s, &u, 5.0, 5.0);
+    // The turn stays round: its tip is still about 12 px out from the runs' end.
+    assert!(s.points().iter().any(|q| dist(*q, [412.0, 112.0]) < 4.0));
+}
+
+#[test]
+fn narrow_closed_capsules_are_cleaned_not_collapsed() {
+    // A long thin rounded outline (500 × 30), as in the sketch.
+    let mut cap = dense(&[[100.0, 100.0], [600.0, 100.0]]);
+    cap.extend((1..=47).map(|i| {
+        let a = -std::f64::consts::FRAC_PI_2 + std::f64::consts::PI * i as f64 / 47.0;
+        [600.0 + 15.0 * a.cos(), 115.0 + 15.0 * a.sin()]
+    }));
+    cap.extend(dense(&[[600.0, 130.0], [100.0, 130.0]]).into_iter().skip(1));
+    cap.extend((1..=47).map(|i| {
+        let a = std::f64::consts::FRAC_PI_2 + std::f64::consts::PI * i as f64 / 47.0;
+        [100.0 + 15.0 * a.cos(), 115.0 + 15.0 * a.sin()]
+    }));
+    let drawn = noisy(&cap, 5.0, 1.5);
+    let s = recognize(&drawn, 1.0).expect("cleaned");
+    assert!(s.end().is_none(), "closed: {s:?}");
+    assert!(!matches!(s.kind(), "ellipse" | "circle" | "line"), "never squashed into an ellipse or a line: {s:?}");
+    // Both long sides stay apart (the 30 px thickness is kept) and the outline follows the stroke.
+    assert_follows(&s, &cap, 6.0, 6.0);
+}
+
+#[test]
+fn a_held_freeform_stroke_is_cleaned_while_pressed_and_undoes_in_one_step() {
+    let mut app = setup(true);
+    // A wavy stroke with a zigzag end, inside the 240 × 240 document.
+    let mut path: Vec<P> = (0..=150).map(|i| [20.0 + i as f64, 80.0 + 20.0 * (std::f64::consts::TAU * i as f64 / 50.0).sin()]).collect();
+    path.extend(dense(&[[170.0, 80.0], [185.0, 140.0], [200.0, 80.0], [215.0, 140.0]]).into_iter().skip(1));
+    let drawn = noisy(&path, 4.0, 1.5);
+    let before = steps(&app);
+    draw(&mut app, &drawn, |_| 1.0);
+    assert_eq!(hold(&mut app, 800.0), Some(Duration::ZERO), "cleaned while held, repainted at once");
+    let shape = app.drag.as_ref().and_then(|d| d.smart.as_ref()).and_then(Hold::shape).expect("cleaned");
+    assert!(matches!(shape.kind(), "freeform" | "curve" | "polyline"), "{shape:?}");
+    release(&mut app, *drawn.last().unwrap());
+    assert_eq!(steps(&app), before + 1, "one step");
+    assert_eq!(last_stroke(&app)["smoothing"], json!(0.0));
+    let painted = |app: &PhotocraftApp| alpha(app, 70, 80) > 0.5 || alpha(app, 70, 79) > 0.5 || alpha(app, 70, 81) > 0.5;
+    assert!(painted(&app));
+    assert!(app.session.undo());
+    assert!(!painted(&app), "undo removes it");
+    assert!(app.session.redo());
+    assert!(painted(&app));
+}
+
+/// A before/after sheet for review: each sample stroke as drawn (left, red) and cleaned (right,
+/// black), painted with the real brush engine and saved as a PNG to `$SMART_SHAPE_SHEET`.
+/// Run on demand: `SMART_SHAPE_SHEET=sheet.png cargo test -p photocraft-ui-egui --lib
+/// smart_shape_before_after_sheet -- --ignored`.
+#[test]
+#[ignore = "writes a review image; run on demand"]
+fn smart_shape_before_after_sheet() {
+    let Ok(path) = std::env::var("SMART_SHAPE_SHEET") else { return };
+    let (mixed, _) = mixed_stroke();
+    let wave: Vec<P> = (0..=400).map(|i| [700.0 + i as f64, 760.0 + 30.0 * (std::f64::consts::TAU * i as f64 / 100.0).sin()]).collect();
+    let zig = dense(&[[100.0, 700.0], [150.0, 620.0], [200.0, 700.0], [250.0, 620.0], [300.0, 700.0], [350.0, 620.0], [400.0, 700.0]]);
+    let tri = polygon(&[[460.0, 640.0], [560.0, 800.0], [380.0, 800.0]], 24, 0.0);
+    let mut cap = dense(&[[300.0, 880.0], [800.0, 880.0]]);
+    cap.extend((1..=47).map(|i| {
+        let a = -std::f64::consts::FRAC_PI_2 + std::f64::consts::PI * i as f64 / 47.0;
+        [800.0 + 15.0 * a.cos(), 895.0 + 15.0 * a.sin()]
+    }));
+    cap.extend(dense(&[[800.0, 910.0], [300.0, 910.0]]).into_iter().skip(1));
+    cap.extend((1..=47).map(|i| {
+        let a = std::f64::consts::FRAC_PI_2 + std::f64::consts::PI * i as f64 / 47.0;
+        [300.0 + 15.0 * a.cos(), 895.0 + 15.0 * a.sin()]
+    }));
+    let samples = [noisy(&mixed, 6.0, 3.0), noisy(&wave, 5.0, 2.0), noisy(&zig, 6.0, 2.5), noisy(&tri, 6.0, 2.5), noisy(&cap, 6.0, 2.0)];
+    let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), Default::default());
+    app.run("file.new", json!({"width": 2500, "height": 1000, "background": "white"})).unwrap();
+    let mut paint = |pts: &[P], dx: f64, color: &str| {
+        let points: Vec<[f64; 3]> = pts.iter().map(|p| [p[0] + dx, p[1], 1.0]).collect();
+        app.run("paint.stroke", json!({"points": points, "color": color, "size": 5, "smoothing": 0.0})).unwrap();
+    };
+    for drawn in &samples {
+        paint(drawn, 0.0, "#c03030");
+        let cleaned = recognize(drawn, 1.0).map_or_else(|| drawn.clone(), |s| s.points());
+        paint(&cleaned, 1250.0, "#101010");
+    }
+    let doc = app.session.active().unwrap().doc.clone();
+    let png = photocraft_io::export(&doc, "png", &Default::default()).unwrap();
+    std::fs::write(&path, &png.bytes).unwrap();
 }
 
 /// A closed polygon through `verts` drawn by hand: `per_side` points along each side, wobbling by

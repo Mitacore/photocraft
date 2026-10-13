@@ -115,3 +115,19 @@ jobs:
       - name: Focused tests
         if: ${{ !cancelled() }}
         run: cargo test -p photocraft-ui-egui --lib --locked -- sync_view linked_nav link_navigation doc_tabs smart_shape channel_view
+
+      # Before/after review image of Smart Shape's cleanup (drawn in red, cleaned in black).
+      - name: Smart Shape before/after sheet
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $env:SMART_SHAPE_SHEET = Join-Path $PWD 'smart-shape-before-after.png'
+          cargo test -p photocraft-ui-egui --lib --locked -- smart_shape_before_after_sheet --ignored
+          if ($LASTEXITCODE -ne 0) { throw "sheet failed" }
+
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: SmartShape-BeforeAfter
+          path: smart-shape-before-after.png
+          retention-days: 14
