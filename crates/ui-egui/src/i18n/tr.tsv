@@ -3861,3 +3861,6 @@ cameraData	Lens	Lens
 
 # Window > Arrange > NAFY (linked reference / drawing navigation)
 	NAFY (Linked Reference & Drawing Navigation)	NAFY (bağlantılı referans ve çizim gezinmesi)
+
+# Sync View (title bar button, Window > Arrange)
+	Sync View	Görünümü eşitle

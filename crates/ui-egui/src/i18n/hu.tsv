@@ -4050,3 +4050,6 @@ cameraRaw	Yellow	Sárga
 
 # Window > Arrange > NAFY (linked reference / drawing navigation)
 	NAFY (Linked Reference & Drawing Navigation)	NAFY (összekapcsolt referencia- és rajznavigáció)
+
+# Sync View (title bar button, Window > Arrange)
+	Sync View	Nézet szinkronizálása

@@ -2812,3 +2812,6 @@ curves	Smooth	Suavizar
 
 # Window > Arrange > NAFY (linked reference / drawing navigation)
 	NAFY (Linked Reference & Drawing Navigation)	NAFY (navegación vinculada de referencia y dibujo)
+
+# Sync View (title bar button, Window > Arrange)
+	Sync View	Sincronizar vista

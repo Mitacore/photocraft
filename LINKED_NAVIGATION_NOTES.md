@@ -1,6 +1,6 @@
 # NAFY (Linked Reference & Drawing Navigation): implementation notes
 
-Base: `storytold/photocraft` main @ `6f85054288a564f9fbbccb99268ffdb34e581584` (see `UPSTREAM_COMMIT.txt`).
+Base: `storytold/photocraft` main @ `6f85054288a564f9fbbccb99268ffdb34e581584`.
 Started from the starter patch `photocraft-linked-navigation.patch`, applied by hand and then reworked.
 
 ## What it does
@@ -35,8 +35,27 @@ Started from the starter patch `photocraft-linked-navigation.patch`, applied by 
 - Translations were added, because `complete_languages_translate_every_menu_string` fails without them.
 - Navigating the reference now moves the pair. In the patch, it was silently discarded.
 
+## Sync View (title bar button)
+- One click on the two-frames button (title bar, next to the Workspace switcher) or **Window › Arrange › Sync View**
+  opens a second native window on the active document. There is no dialog and no choice to make.
+- It is the same live document. No copy, file or layer is created, so painting and layer edits show in both windows.
+- Zoom, centre and rotation are copied either way (`sync_view::tick`, run before and after the extra windows are drawn).
+  If both views moved in the same frame, the main window wins.
+- The button is highlighted while on and disabled without a document. A second click closes only that window. Closing
+  it by hand, closing its document, or Consolidate All to Tabs turns Sync View off and resets the button.
+- Files: `sync_view.rs`, `sync_view_tests.rs`, `assets/icons/sync-view.svg` (original, listed in ATTRIBUTION.md),
+  `icon_data.rs`, `panels.rs` (button), `canvas.rs` (`extra_windows`), `view_cmds.rs`, `menus.rs`, `i18n/*.tsv`.
+- The second window shows the document but has no painting tools. This is how PhotoCraft's existing
+  New Window for Document works.
+
+## channel_view fix (upstream flaky test)
+`channel.setVisible` bumps the revision without changing pixels, so `channel_view::ensure` threw away its sampled
+composite on every channel toggle. Upstream, `channel_eyes_reuse_composite_until_pixels_change` failed 4 of 30 runs
+alone on Windows. The committed snapshot is now held weakly and reused, and the test passed 30 of 30 runs alone and
+8 of 8 runs in the full suite.
+
 ## Known limits (v1)
 - With rulers on, the drawing pane is smaller by the ruler width, so the two panes are offset by that many points.
   The same document point stays at each pane's centre.
 - Only one pair, and only equal sizes.
-- Not verified locally: this machine has no Rust toolchain. Compilation and tests run in the workflow above.
+- Not verified locally: this machine has no Rust toolchain. Compilation and tests run in the Windows-only workflow.

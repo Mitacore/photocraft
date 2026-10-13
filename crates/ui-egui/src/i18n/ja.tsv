@@ -3806,3 +3806,6 @@ curves	Smooth	スムーズ
 
 # Window > Arrange > NAFY (linked reference / drawing navigation)
 	NAFY (Linked Reference & Drawing Navigation)	NAFY (参照と描画のリンクナビゲーション)
+
+# Sync View (title bar button, Window > Arrange)
+	Sync View	ビューを同期

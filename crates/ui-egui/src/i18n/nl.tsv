@@ -3888,3 +3888,6 @@ curves	Smooth	Vloeiend maken
 
 # Window > Arrange > NAFY (linked reference / drawing navigation)
 	NAFY (Linked Reference & Drawing Navigation)	NAFY (gekoppelde navigatie voor referentie en tekening)
+
+# Sync View (title bar button, Window > Arrange)
+	Sync View	Weergave synchroniseren

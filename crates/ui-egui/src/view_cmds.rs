@@ -102,6 +102,8 @@ pub struct ViewOptions {
     /// Window › Arrange › NAFY: the drawing/reference pair whose cameras move together
     /// (`None` = off).
     pub linked_navigation: Option<LinkedNavigation>,
+    /// Sync View: the second window kept on the same camera (`None` = off; `sync_view.rs`).
+    pub sync_view: Option<crate::sync_view::SyncView>,
     /// Type › Font Preview Size: "small" | "medium" | "large" | "extraLarge" | "huge".
     pub font_preview_size: String,
     /// Type › Language Options: "defaultFeatures" | "eastAsianFeatures" | "middleEasternFeatures",
@@ -135,6 +137,7 @@ impl Default for ViewOptions {
             pixel_art_preview: false,
             arrange: "tabs".into(),
             linked_navigation: None,
+            sync_view: None,
             font_preview_size: "medium".into(),
             language_features: "defaultFeatures".into(),
             middle_eastern_composer: false,
@@ -435,6 +438,7 @@ pub fn handles(id: &str) -> bool {
                     | "floatAllInWindows"
                     | "newWindowForDocument"
                     | "linkNavigation"
+                    | "syncView"
                     | "matchZoom"
                     | "matchLocation"
                     | "matchRotation"
@@ -487,6 +491,7 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> Option<bool> {
             "consolidateAllToTabs" => true,
             "floatInWindow" | "newWindowForDocument" => doc,
             "linkNavigation" => app.ui.view.linked_navigation.is_some() || same_size_pair(app),
+            "syncView" => doc || crate::sync_view::is_on(app),
             "matchZoom" | "matchLocation" | "matchRotation" | "matchAll" => app.session.documents().len() > 1 || !app.ui.windows.is_empty(),
             _ => {
                 app.session.documents().len() > 1
@@ -526,6 +531,9 @@ pub fn checked(app: &PhotocraftApp, id: &str) -> Option<bool> {
     }
     if id == "window.arrange.linkNavigation" {
         return Some(o.linked_navigation.is_some());
+    }
+    if id == crate::sync_view::COMMAND {
+        return Some(o.sync_view.is_some());
     }
     if let Some(k) = id.strip_prefix("window.arrange.")
         && LAYOUTS.contains(&k)
@@ -915,6 +923,7 @@ fn arrange(app: &mut PhotocraftApp, k: &str, p: &Value) -> Result<Value, String>
     }
     match k {
         "linkNavigation" => link_navigation(app, p),
+        "syncView" => crate::sync_view::command(app, p),
         "consolidateAllToTabs" => {
             app.ui.view.arrange = "tabs".into();
             app.ui.windows.clear();

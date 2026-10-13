@@ -3737,3 +3737,6 @@ navigator	Zoom	Zvětšení
 
 # Window > Arrange > NAFY (linked reference / drawing navigation)
 	NAFY (Linked Reference & Drawing Navigation)	NAFY (propojená navigace reference a kresby)
+
+# Sync View (title bar button, Window > Arrange)
+	Sync View	Synchronizovat zobrazení

@@ -641,7 +641,8 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     // A narrow bar drops what is also in a menu, Discord first (below), then
                     // the theme toggle (Preferences), then search (Edit › Search), and narrows
                     // the switcher (Window › Workspace) before anything runs over.
-                    let room = ui.available_width();
+                    // Sync View's button always stays on the bar: keep its slot out of the room.
+                    let room = ui.available_width() - ICON_SLOT;
                     let icons_shown: u8 = if room >= WORKSPACE_MIN + 2.0 * ICON_SLOT {
                         2
                     } else if room >= WORKSPACE_MIN + ICON_SLOT {
@@ -654,6 +655,8 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         app.ui.workspace = ws;
                         crate::menus::apply_workspace(app);
                     }
+                    // One click: a second window on the active document, cameras in step.
+                    crate::sync_view::button(app, ui);
                     if icons_shown >= 1
                         && icons::button(ui, "search", 28.0, app.ui.palette_open, &crate::shortcuts::tip_label(app, "Search commands", "edit.search")).clicked()
                     {

@@ -5467,10 +5467,14 @@ pub(crate) fn finish_gesture(app: &mut PhotocraftApp, d: Drag) {
 
 /// Extra OS windows showing documents (multi-window / multi-monitor).
 pub fn extra_windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
+    // Sync View: the main canvas's camera from this frame reaches its window before it draws.
+    crate::sync_view::tick(app);
+    let synced = crate::sync_view::window(app);
     let wins = app.ui.windows.clone();
     for w in wins.into_iter().filter(|w| w.open) {
         let Some(st) = app.session.documents().get(w.document) else { continue };
-        let title = format!("{} — window {}", st.doc.name, w.id);
+        let suffix = if synced == Some(w.id) { tl!("Sync View").to_string() } else { format!("window {}", w.id) };
+        let title = format!("{} — {suffix}", st.doc.name);
         let vid = egui::ViewportId::from_hash_of(("docwin", w.id));
         let mut builder = egui::ViewportBuilder::default().with_title(title).with_inner_size([800.0, 600.0]);
         if let Some([x, y]) = w.position {
@@ -5495,6 +5499,11 @@ pub fn extra_windows(app: &mut PhotocraftApp, ctx: &egui::Context) {
         }
     }
     app.ui.windows.retain(|w| w.open);
+    // ...and the window's navigation reaches the main canvas (next frame), or a closed window
+    // turns Sync View off.
+    if crate::sync_view::tick(app) {
+        ctx.request_repaint();
+    }
 }
 
 /// Selection mode from the options bar, overridden by modifier keys (⇧ add, ⌥ subtract, ⇧⌥ intersect).

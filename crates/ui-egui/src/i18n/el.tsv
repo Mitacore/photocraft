@@ -3826,3 +3826,6 @@ curves	Smooth	Εξομάλυνση
 
 # Window > Arrange > NAFY (linked reference / drawing navigation)
 	NAFY (Linked Reference & Drawing Navigation)	NAFY (Συνδεδεμένη πλοήγηση αναφοράς και σχεδίου)
+
+# Sync View (title bar button, Window > Arrange)
+	Sync View	Συγχρονισμός προβολής

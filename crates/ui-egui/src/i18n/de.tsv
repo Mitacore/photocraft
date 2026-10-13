@@ -2771,3 +2771,6 @@ curves	Smooth	Glätten
 
 # Window > Arrange > NAFY (linked reference / drawing navigation)
 	NAFY (Linked Reference & Drawing Navigation)	NAFY (Verknüpfte Referenz- und Zeichnungsnavigation)
+
+# Sync View (title bar button, Window > Arrange)
+	Sync View	Ansicht synchronisieren

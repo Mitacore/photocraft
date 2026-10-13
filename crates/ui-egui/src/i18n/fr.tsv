@@ -3130,3 +3130,6 @@ curves	Smooth	Lisser
 
 # Window > Arrange > NAFY (linked reference / drawing navigation)
 	NAFY (Linked Reference & Drawing Navigation)	NAFY (navigation liée référence et dessin)
+
+# Sync View (title bar button, Window > Arrange)
+	Sync View	Synchroniser la vue

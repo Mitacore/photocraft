@@ -3074,3 +3074,6 @@ curves	Smooth	Сгладить
 
 # Window > Arrange > NAFY (linked reference / drawing navigation)
 	NAFY (Linked Reference & Drawing Navigation)	NAFY (связанная навигация референса и рисунка)
+
+# Sync View (title bar button, Window > Arrange)
+	Sync View	Синхронизировать вид

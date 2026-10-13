@@ -2722,3 +2722,6 @@ curves	Smooth	平滑
 
 # Window > Arrange > NAFY (linked reference / drawing navigation)
 	NAFY (Linked Reference & Drawing Navigation)	NAFY（參考與繪圖連動導覽）
+
+# Sync View (title bar button, Window > Arrange)
+	Sync View	同步檢視
