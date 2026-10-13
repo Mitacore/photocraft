@@ -268,13 +268,21 @@ fn closing_resizing_or_rearranging_turns_the_link_off_safely() {
     h.state_mut().sync_views();
     h.run_steps(2);
     assert!(h.state().ui.view.linked_navigation.is_none());
-    // Another arrangement, tabs, or a floating window.
-    for id in ["window.arrange.twoUpHorizontal", "window.arrange.consolidateAllToTabs", "window.arrange.newWindowForDocument"] {
+    // Another arrangement or tabs.
+    for id in ["window.arrange.twoUpHorizontal", "window.arrange.consolidateAllToTabs"] {
         let mut h = linked();
         invoke(&mut h, id, json!({})).unwrap();
         assert!(h.state().ui.view.linked_navigation.is_none(), "{id} unlinks");
         assert_eq!(crate::view_cmds::checked(h.state(), LINK), Some(false));
     }
+    // A floating document window unlinks at once. Checked without drawing frames: kittest draws
+    // extra viewports inside the one context, where the same document's canvas in the main area
+    // and in its window share widget ids (an egui debug assertion, unrelated to linking).
+    let mut h = linked();
+    let ctx = h.ctx.clone();
+    crate::menus::invoke(h.state_mut(), &ctx, "window.arrange.newWindowForDocument", json!({})).unwrap();
+    assert!(h.state().ui.view.linked_navigation.is_none(), "a floating window unlinks");
+    assert_eq!(crate::view_cmds::checked(h.state(), LINK), Some(false));
 }
 
 #[test]
