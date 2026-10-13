@@ -25,6 +25,8 @@ struct SampledComposite {
     revision: u64,
     preview_key: u64,
     factor: u32,
+    /// The committed snapshot these pixels came from (see `ensure`).
+    doc: std::sync::Weak<Document>,
     pixels: Vec<[f32; 4]>,
 }
 
@@ -271,11 +273,19 @@ pub fn ensure(app: &mut PhotocraftApp, ctx: &egui::Context, idx: usize) -> Optio
     let max_side = (ctx.input(|i| i.max_texture_side) as u32).clamp(256, MAX_SIDE);
     let factor = doc.size.width.max(doc.size.height).div_ceil(max_side).max(1);
     // A live preview can mutate the same Arc in place. Revision and preview_key, not
-    // pointer identity, determine whether these flattened pixels are still current.
+    // pointer identity, determine whether these flattened pixels are still current. The one
+    // exception is the committed document (preview_key 0): a view-only change such as a channel
+    // eye (`channel_cmds::touch`) bumps the revision but keeps the same immutable snapshot, whose
+    // composite stays valid. Held weakly, so an edit always shows as a different snapshot.
+    let same_pixels = |s: &SampledComposite| s.revision == revision || (preview_key == 0 && s.doc.ptr_eq(&std::sync::Arc::downgrade(&doc)));
     if let Some(c) = app.channel_views.get_mut(&id)
-        && c.source.as_ref().is_some_and(|s| s.factor != factor || s.revision != revision || s.preview_key != preview_key)
+        && let Some(s) = c.source.as_mut()
     {
-        c.source = None;
+        if s.factor != factor || s.preview_key != preview_key || !same_pixels(s) {
+            c.source = None;
+        } else {
+            s.revision = revision;
+        }
     }
     if let Some(c) = app.channel_views.get(&id)
         && c.key == key
@@ -325,12 +335,12 @@ pub fn ensure(app: &mut PhotocraftApp, ctx: &egui::Context, idx: usize) -> Optio
             c.factor = factor;
             c.valid = true;
             if let Some(pixels) = fresh.take() {
-                c.source = Some(SampledComposite { revision, preview_key, factor, pixels });
+                c.source = Some(SampledComposite { revision, preview_key, factor, doc: std::sync::Arc::downgrade(&doc), pixels });
             }
         }
         _ => {
             let tex = ctx.load_texture(format!("channel-view-{id}"), img, TextureOptions::LINEAR);
-            let source = fresh.map(|pixels| SampledComposite { revision, preview_key, factor, pixels });
+            let source = fresh.map(|pixels| SampledComposite { revision, preview_key, factor, doc: std::sync::Arc::downgrade(&doc), pixels });
             app.channel_views.insert(id, Cache { revision, key, preview_key, factor, valid: true, tex, source });
         }
     }

@@ -1,0 +1,57 @@
+# One-off Windows check for channel_view::tests::channel_eyes_reuse_composite_until_pixels_change:
+# the test alone (30 runs) and its module under parallel load (30 runs), on upstream main
+# (6f85054) and on this branch, to tell a regression from a flaky test.
+name: channel_view check (Windows)
+
+on:
+  push:
+    branches: [linked-navigation]
+    paths:
+      - .github/workflows/channel-view-check.yml
+      - crates/ui-egui/src/channel_view.rs
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repeat:
+    name: channel_view (${{ matrix.label }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: upstream 6f85054
+            ref: 6f85054288a564f9fbbccb99268ffdb34e581584
+          - label: linked-navigation
+            ref: linked-navigation
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: channel-view-${{ matrix.label }}
+
+      - name: Build the test binary
+        run: cargo test -p photocraft-ui-egui --lib --locked --no-run
+
+      - name: Repeat alone and under parallel load
+        shell: pwsh
+        run: |
+          $test = 'channel_view::tests::channel_eyes_reuse_composite_until_pixels_change'
+          $alone = 0; $full = 0
+          for ($i = 1; $i -le 30; $i++) {
+            cargo test -q -p photocraft-ui-egui --lib --locked $test -- --exact --test-threads=1 *> $null
+            if ($LASTEXITCODE -ne 0) { $alone++ }
+          }
+          # Where it failed in CI: alongside the whole library suite, all threads busy.
+          for ($i = 1; $i -le 8; $i++) {
+            $out = cargo test -q -p photocraft-ui-egui --lib --locked 2>&1 | Out-String
+            if ($out -match "$test \.\.\. FAILED|failures:\s+$test") { $full++ }
+          }
+          "${{ matrix.label }}: alone failed $alone/30; in the full suite failed $full/8" | Tee-Object -FilePath $env:GITHUB_STEP_SUMMARY -Append
