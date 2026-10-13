@@ -3824,8 +3824,6 @@ curves	Smooth	Εξομάλυνση
 	Auto Add/Delete	Αυτόματη προσθήκη/διαγραφή
 	ICO is limited to 256 × 256 pixels	Το ICO περιορίζεται σε 256 × 256 εικονοστοιχεία
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY (Συνδεδεμένη πλοήγηση αναφοράς και σχεδίου)
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Συγχρονισμός προβολής
+	Sync View — Open a synchronized window	Συγχρονισμός προβολής — άνοιγμα συγχρονισμένου παραθύρου

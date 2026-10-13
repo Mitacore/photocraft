@@ -3128,8 +3128,6 @@ curves	Smooth	Lisser
 	Auto Add/Delete	Ajout/suppr. auto
 	ICO is limited to 256 × 256 pixels	Le format ICO est limité à 256 × 256 pixels
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY (navigation liée référence et dessin)
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Synchroniser la vue
+	Sync View — Open a synchronized window	Synchroniser la vue — ouvrir une fenêtre synchronisée

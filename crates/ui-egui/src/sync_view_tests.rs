@@ -40,8 +40,12 @@ fn the_button_needs_a_document_and_shows_its_state() {
     let item = items.iter().find(|i| i.id == COMMAND).unwrap();
     assert_eq!((item.label.as_str(), item.checked), ("Sync View", Some(true)));
     for lang in crate::i18n::Lang::all().filter(|l| l.complete_menus()) {
-        assert!(crate::i18n::has(lang, "Sync View"), "{}: Sync View untranslated", lang.code());
+        for text in ["Sync View", TOOLTIP] {
+            assert!(crate::i18n::has(lang, text), "{}: untranslated {text}", lang.code());
+        }
     }
+    // The old reference/drawing pairing is no longer presented under its NAFY name.
+    assert!(!items.iter().any(|i| i.label.contains("NAFY") || i.id == "window.arrange.linkNavigation"));
 }
 
 #[test]
@@ -127,6 +131,38 @@ fn clicking_again_closes_only_the_second_window() {
     crate::menus::invoke(&mut app, &ctx, COMMAND, json!({"on": false})).unwrap();
     assert!(!is_on(&app));
     assert!(crate::menus::invoke(&mut app, &ctx, COMMAND, json!({"on": "yes"})).is_err());
+}
+
+/// The whole app, drawn: the button ends the tool options bar (right of the Brush's painting
+/// symmetry button, in the same row), for any tool, and is disabled with no document.
+#[test]
+fn the_button_sits_at_the_end_of_the_options_bar() {
+    use egui_kittest::kittest::Queryable;
+    let mut h = egui_kittest::Harness::builder().with_size(egui::vec2(1600.0, 900.0)).with_max_steps(64).build_eframe(|cc| {
+        PhotocraftApp::setup_context(&cc.egui_ctx, Default::default());
+        let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
+        app.session.prefs.edit(|p| p.interface.language = "en".into());
+        app.ui.tool = crate::state::Tool::Brush;
+        app
+    });
+    h.run_steps(4);
+    assert!(h.get_by_label(TOOLTIP).accesskit_node().is_disabled(), "no document: disabled");
+    h.state_mut().run("file.new", json!({"width": 640, "height": 360})).unwrap();
+    h.state_mut().sync_views();
+    h.run_steps(4);
+    let sync = h.get_by_label(TOOLTIP);
+    assert!(!sync.accesskit_node().is_disabled());
+    let (sync, symmetry) = (sync.rect(), h.get_by_label("Set painting symmetry options").rect());
+    assert!(sync.left() >= symmetry.right(), "right of the symmetry button: {sync:?} / {symmetry:?}");
+    assert!((sync.center().y - symmetry.center().y).abs() < 2.0, "same row: {sync:?} / {symmetry:?}");
+    assert!(sync.left() - symmetry.right() < 16.0, "right next to it");
+    assert_eq!((sync.width().round(), sync.height().round()), (24.0, 24.0), "the bar's icon size");
+    // Every tool's bar ends with it (tools whose bars return early included).
+    for tool in [crate::state::Tool::Move, crate::state::Tool::Hand, crate::state::Tool::Pen, crate::state::Tool::SpotHealing, crate::state::Tool::Crop] {
+        h.state_mut().ui.tool = tool;
+        h.run_steps(3);
+        assert_eq!(h.query_all_by_label(TOOLTIP).count(), 1, "{tool:?}: one Sync View button");
+    }
 }
 
 #[test]

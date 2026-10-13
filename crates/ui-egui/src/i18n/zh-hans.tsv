@@ -2735,8 +2735,6 @@ curves	Smooth	平滑
 	Auto Add/Delete	自动添加/删除
 	ICO is limited to 256 × 256 pixels	ICO 最大为 256 × 256 像素
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY（参考与绘画联动导航）
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	同步视图
+	Sync View — Open a synchronized window	同步视图 — 打开同步窗口

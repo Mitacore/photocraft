@@ -62,9 +62,7 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("view.rotateView", "Rotate View", &[], None),
     ("view.resetView", "Reset View", &["View"], None),
     ("window.newWindowForDocument", "New Window for Document", &["Window", "Arrange"], None),
-    // Not in Photoshop: a reference (left) and drawing (right) with one shared camera.
-    ("window.arrange.linkNavigation", "NAFY (Linked Reference & Drawing Navigation)", &["Window", "Arrange"], None),
-    // Not in Photoshop: a second window on the same document, cameras in step (title bar button).
+    // Not in Photoshop: a second window on the same document, cameras in step (options bar button).
     ("window.arrange.syncView", "Sync View", &["Window", "Arrange"], None),
     ("window.toggle.layers", "Layers", &["Window"], Some("F7")),
     ("window.toggle.history", "History", &["Window"], None),
@@ -960,8 +958,7 @@ const PLACE_AFTER: &[(&str, &str)] = &[
     ("file.newFromClipboard", "file.new"),
     ("filter.render.relight", "filter.render.lightingEffects"),
     ("view.resetView", "view.flipHorizontal"),
-    ("window.arrange.linkNavigation", "window.arrange.matchAll"),
-    ("window.arrange.syncView", "window.arrange.linkNavigation"),
+    ("window.arrange.syncView", "window.arrange.matchAll"),
     ("filter.other.colorToAlpha", "filter.other.offset"),
 ];
 

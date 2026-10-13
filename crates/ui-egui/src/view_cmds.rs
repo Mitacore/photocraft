@@ -69,7 +69,7 @@ impl Default for SnapTo {
     }
 }
 
-/// Window › Arrange › NAFY: two equally sized documents side by side, the reference on
+/// Linked navigation: two equally sized documents side by side, the reference on
 /// the left and the drawing on the right. The drawing's camera (zoom, centre, rotation) drives both;
 /// the reference is view only. Held by document id, so tab moves and focus changes can't swap them.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -99,7 +99,7 @@ pub struct ViewOptions {
     pub pixel_art_preview: bool,
     /// Window › Arrange layout of the document area: "tabs" or a tile/n-up layout id.
     pub arrange: String,
-    /// Window › Arrange › NAFY: the drawing/reference pair whose cameras move together
+    /// Linked navigation: the drawing/reference pair whose cameras move together
     /// (`None` = off).
     pub linked_navigation: Option<LinkedNavigation>,
     /// Sync View: the second window kept on the same camera (`None` = off; `sync_view.rs`).
@@ -833,7 +833,7 @@ pub(crate) fn float_window(app: &mut PhotocraftApp, doc: usize, offset: usize) -
     wid
 }
 
-/// Two equally sized, non-empty documents: what NAFY pairs. This first version copies
+/// Two equally sized, non-empty documents: what linked navigation pairs. This first version copies
 /// document-space cameras as they are, so the sizes must match; nothing is scaled to fit.
 fn same_size(a: &photocraft_engine::DocState, b: &photocraft_engine::DocState) -> bool {
     let (a, b) = (&a.doc.size, &b.doc.size);
@@ -848,7 +848,7 @@ pub(crate) fn same_size_pair(app: &PhotocraftApp) -> bool {
     }
 }
 
-/// NAFY's `(drawing, reference)` document indices, while it still applies: exactly
+/// Linked navigation's `(drawing, reference)` document indices, while it still applies: exactly
 /// these two documents open, equally sized, in the 2-up vertical layout, with no floating
 /// document windows. `None` when off or no longer valid.
 pub(crate) fn linked_pair(app: &PhotocraftApp) -> Option<(usize, usize)> {
@@ -862,7 +862,7 @@ pub(crate) fn linked_pair(app: &PhotocraftApp) -> Option<(usize, usize)> {
     (docs.len() == 2 && drawing != reference && same_size(docs.get(drawing)?, docs.get(reference)?)).then_some((drawing, reference))
 }
 
-/// Keep NAFY consistent after anything that may change the documents or the active
+/// Keep linked navigation consistent after anything that may change the documents or the active
 /// one (a tab click, ⌃Tab, a menu, a close, automation): turn it off when the pair no longer
 /// applies, else keep the drawing active so the reference never becomes the editable document.
 pub(crate) fn enforce_linked_navigation(app: &mut PhotocraftApp) {
@@ -889,7 +889,7 @@ fn link_navigation(app: &mut PhotocraftApp, p: &Value) -> Result<Value, String> 
         return Ok(json!({"linkedNavigation": false}));
     }
     if !same_size_pair(app) {
-        return Err("NAFY needs exactly two open documents of the same pixel size".into());
+        return Err("Linked navigation needs exactly two open documents of the same pixel size".into());
     }
     // The drawing is the document active when linking; the reference is the other one.
     let drawing = app.session.active_index().ok_or("no document")?;

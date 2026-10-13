@@ -1,4 +1,4 @@
-//! Sync View (the title bar's two-frames button, Window › Arrange › Sync View): one click opens a
+//! Sync View (the options bar's two-frames button, Window › Arrange › Sync View): one click opens a
 //! second native window on the active document and keeps both cameras (zoom, centre, rotation)
 //! in step, either way. It is the same live document, so painting and layer edits show in both;
 //! nothing is duplicated. A second click, or closing that window, ends it.
@@ -97,12 +97,17 @@ pub fn tick(app: &mut PhotocraftApp) -> bool {
     main_moved
 }
 
-/// The title bar button: disabled without a document, highlighted while syncing.
+pub const TOOLTIP: &str = "Sync View — Open a synchronized window";
+
+/// The options bar button, at the end of every tool's options: disabled without a document,
+/// highlighted while syncing. Sized like the bar's other icon toggles (24 px), with a slightly
+/// larger glyph so its two frames and arrows stay readable.
 pub fn button(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let doc = app.session.active().is_some();
     let on = is_on(app);
-    let tip = crate::shortcuts::tip_label(app, "Sync View", COMMAND);
-    let clicked = ui.add_enabled_ui(doc || on, |ui| crate::icons::button(ui, "sync-view", 28.0, on, &tip)).inner.clicked();
+    let tip = crate::shortcuts::tip_label(app, TOOLTIP, COMMAND);
+    ui.add_space(2.0);
+    let clicked = ui.add_enabled_ui(doc || on, |ui| crate::icons::button_with_icon_size(ui, "sync-view", 24.0, 16.0, on, &tip)).inner.clicked();
     if clicked && let Err(e) = crate::menus::invoke(app, ui.ctx(), COMMAND, json!({})) {
         app.ui.status = e;
         app.ui.status_error = true;

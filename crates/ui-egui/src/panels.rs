@@ -641,8 +641,7 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     // A narrow bar drops what is also in a menu, Discord first (below), then
                     // the theme toggle (Preferences), then search (Edit › Search), and narrows
                     // the switcher (Window › Workspace) before anything runs over.
-                    // Sync View's button always stays on the bar: keep its slot out of the room.
-                    let room = ui.available_width() - ICON_SLOT;
+                    let room = ui.available_width();
                     let icons_shown: u8 = if room >= WORKSPACE_MIN + 2.0 * ICON_SLOT {
                         2
                     } else if room >= WORKSPACE_MIN + ICON_SLOT {
@@ -655,8 +654,6 @@ pub fn title_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                         app.ui.workspace = ws;
                         crate::menus::apply_workspace(app);
                     }
-                    // One click: a second window on the active document, cameras in step.
-                    crate::sync_view::button(app, ui);
                     if icons_shown >= 1
                         && icons::button(ui, "search", 28.0, app.ui.palette_open, &crate::shortcuts::tip_label(app, "Search commands", "edit.search")).clicked()
                     {
@@ -955,11 +952,15 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     icons::paint(ui, r, "chevron-down", 10.0, t.text_faint);
                 }
                 widgets::vline(ui, 22.0);
+                // Sync View ends the bar for every tool, after the tool's own options (the paths
+                // below that return early add it themselves).
                 if app.ui.transform.is_some() {
                     crate::transform_tool::options_bar(app, ui);
+                    crate::sync_view::button(app, ui);
                     return;
                 }
                 if crate::distort_ui::options_bar(app, ui) {
+                    crate::sync_view::button(app, ui);
                     return;
                 }
                 let tool = app.ui.tool;
@@ -989,6 +990,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     || crate::frame_tool::options_bar(app, ui, tool)
                     || crate::artboard_tool::options_bar(app, ui, tool)
                 {
+                    crate::sync_view::button(app, ui);
                     return;
                 }
                 let brush_before = app.session.tools.brush.clone();
@@ -1493,6 +1495,7 @@ pub fn options_bar(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                     crate::symmetry_ui::menu(app, ui);
                 }
                 crate::brush_panel::commit_gesture(app, ui.ctx(), &brush_before, &brush);
+                crate::sync_view::button(app, ui);
             });
             reveal_focused_control(ui);
             });

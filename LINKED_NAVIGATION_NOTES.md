@@ -1,10 +1,10 @@
-# NAFY (Linked Reference & Drawing Navigation): implementation notes
+# Sync View and linked reference/drawing navigation: implementation notes
 
 Base: `storytold/photocraft` main @ `6f85054288a564f9fbbccb99268ffdb34e581584`.
 Started from the starter patch `photocraft-linked-navigation.patch`, applied by hand and then reworked.
 
-## What it does
-- **Window › Arrange › NAFY (Linked Reference & Drawing Navigation)**: off by default. It is enabled only when exactly 2
+## Linked reference/drawing navigation (formerly NAFY; no menu item now)
+- `window.arrange.linkNavigation`: off by default. It is enabled only when exactly 2
   documents are open and they have the same pixel size. Different sizes are refused and never scaled.
 - When on, the layout switches to 2-up vertical. The document that was active when you linked becomes the **drawing**
   (right pane, editable). The other document becomes the **reference** (left pane, view only).
@@ -35,8 +35,9 @@ Started from the starter patch `photocraft-linked-navigation.patch`, applied by 
 - Translations were added, because `complete_languages_translate_every_menu_string` fails without them.
 - Navigating the reference now moves the pair. In the patch, it was silently discarded.
 
-## Sync View (title bar button)
-- One click on the two-frames button (title bar, next to the Workspace switcher) or **Window › Arrange › Sync View**
+## Sync View (options bar button), the user-facing feature
+- One click on the two-frames button (right end of the tool options bar, after the Brush's painting symmetry button;
+  tooltip "Sync View — Open a synchronized window") or **Window › Arrange › Sync View**
   opens a second native window on the active document. There is no dialog and no choice to make.
 - It is the same live document. No copy, file or layer is created, so painting and layer edits show in both windows.
 - Zoom, centre and rotation are copied either way (`sync_view::tick`, run before and after the extra windows are drawn).
@@ -44,7 +45,10 @@ Started from the starter patch `photocraft-linked-navigation.patch`, applied by 
 - The button is highlighted while on and disabled without a document. A second click closes only that window. Closing
   it by hand, closing its document, or Consolidate All to Tabs turns Sync View off and resets the button.
 - Files: `sync_view.rs`, `sync_view_tests.rs`, `assets/icons/sync-view.svg` (original, listed in ATTRIBUTION.md),
-  `icon_data.rs`, `panels.rs` (button), `canvas.rs` (`extra_windows`), `view_cmds.rs`, `menus.rs`, `i18n/*.tsv`.
+  `icon_data.rs`, `panels.rs` (button at the end of every tool's options), `canvas.rs` (`extra_windows`),
+  `view_cmds.rs`, `menus.rs`, `i18n/*.tsv`.
+- The NAFY name is gone from menus and tooltips. The two-document linked navigation below is still in the code as
+  `window.arrange.linkNavigation` (control channel / automation only, no menu item).
 - The second window shows the document but has no painting tools. This is how PhotoCraft's existing
   New Window for Document works.
 

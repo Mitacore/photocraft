@@ -3612,8 +3612,6 @@ curves	Smooth	Làm mượt
 	Auto Add/Delete	Tự động thêm/xóa
 	ICO is limited to 256 × 256 pixels	ICO giới hạn ở 256 × 256 pixel
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY (điều hướng liên kết tham chiếu và bản vẽ)
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Đồng bộ chế độ xem
+	Sync View — Open a synchronized window	Đồng bộ chế độ xem — mở cửa sổ đồng bộ

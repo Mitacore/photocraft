@@ -4202,8 +4202,6 @@ shape	Appearance	Izgled
 	Ink Characteristics	Karakteristike mastila
 	Solidity:	Punoća:
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY (povezana navigacija reference i crteža)
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Sinhronizuj prikaz
+	Sync View — Open a synchronized window	Sinhronizuj prikaz — otvori sinhronizovan prozor

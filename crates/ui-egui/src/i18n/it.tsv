@@ -4091,8 +4091,6 @@ navigator	Zoom	Zoom
 	Auto Add/Delete	Aggiungi/elimina automaticamente
 	ICO is limited to 256 × 256 pixels	ICO è limitato a 256 × 256 pixel
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY (navigazione collegata di riferimento e disegno)
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Sincronizza vista
+	Sync View — Open a synchronized window	Sincronizza vista — apri una finestra sincronizzata

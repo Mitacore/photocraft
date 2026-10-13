@@ -3735,8 +3735,6 @@ navigator	Zoom	Zvětšení
 	Auto Add/Delete	Automaticky přidat/odstranit
 	ICO is limited to 256 × 256 pixels	ICO je omezen na 256 × 256 pixelů
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY (propojená navigace reference a kresby)
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Synchronizovat zobrazení
+	Sync View — Open a synchronized window	Synchronizovat zobrazení — otevřít synchronizované okno

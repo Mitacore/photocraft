@@ -1829,7 +1829,7 @@ pub(crate) fn arranged_cells(app: &PhotocraftApp, rect: Rect) -> Option<Vec<(usi
     let idx = app.session.active_index()?;
     let n = app.session.documents().len();
     let cells = crate::view_cmds::cells(&app.ui.view.arrange, rect, n)?;
-    // NAFY: the drawing comes first so the reference follows its camera in the same
+    // Linked navigation: the drawing comes first so the reference follows its camera in the same
     // frame, but it is shown on the RIGHT; the reference is on the LEFT.
     if let Some((drawing, reference)) = crate::view_cmds::linked_pair(app)
         && let &[left, right] = cells.as_slice()
@@ -1841,7 +1841,7 @@ pub(crate) fn arranged_cells(app: &PhotocraftApp, rect: Rect) -> Option<Vec<(usi
     Some(shown)
 }
 
-/// `view` with `camera`'s zoom, centre and rotation: NAFY's view-only camera copy. It
+/// `view` with `camera`'s zoom, centre and rotation: Linked navigation's view-only camera copy. It
 /// never touches either document, its layers, tools or history.
 pub(crate) fn linked_reference_view(camera: &View, view: &View) -> View {
     View { zoom: camera.zoom, center: camera.center, rotation: camera.rotation, fit_pending: false, fill_pending: false, ..view.clone() }

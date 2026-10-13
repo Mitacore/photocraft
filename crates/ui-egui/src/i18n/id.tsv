@@ -3115,8 +3115,6 @@ curves	Smooth	Haluskan
 	Auto Add/Delete	Tambah/Hapus Otomatis
 	ICO is limited to 256 × 256 pixels	ICO dibatasi hingga 256 × 256 piksel
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY (navigasi referensi & gambar tertaut)
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Sinkronkan tampilan
+	Sync View — Open a synchronized window	Sinkronkan tampilan — buka jendela tersinkron

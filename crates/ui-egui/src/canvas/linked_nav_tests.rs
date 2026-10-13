@@ -1,4 +1,4 @@
-//! Window › Arrange › NAFY through the whole app: a reference (left) and a drawing
+//! Linked navigation through the whole app: a reference (left) and a drawing
 //! (right) of the same size share one camera. Real frames and egui input, like a user's.
 
 use std::sync::Arc;

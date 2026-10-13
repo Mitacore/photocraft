@@ -3916,8 +3916,6 @@ layerLabel	No Color	Sem cor
 	Auto Add/Delete	Adicionar/excluir automaticamente
 	ICO is limited to 256 × 256 pixels	ICO é limitado a 256 × 256 pixels
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY (navegação vinculada de referência e desenho)
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Sincronizar exibição
+	Sync View — Open a synchronized window	Sincronizar exibição — abrir uma janela sincronizada

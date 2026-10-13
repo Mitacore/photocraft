@@ -4048,8 +4048,6 @@ cameraRaw	Yellow	Sárga
 	Ink Characteristics	Festék jellemzői
 	Solidity:	Fedőképesség:
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY (összekapcsolt referencia- és rajznavigáció)
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Nézet szinkronizálása
+	Sync View — Open a synchronized window	Nézet szinkronizálása — szinkronizált ablak megnyitása

@@ -3825,8 +3825,6 @@ curves	Smooth	Згладити
 	Auto Add/Delete	Автододавання/видалення
 	ICO is limited to 256 × 256 pixels	ICO обмежено розміром 256 × 256 пікселів
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY (пов’язана навігація референсу й малюнка)
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Синхронізувати вигляд
+	Sync View — Open a synchronized window	Синхронізувати вигляд — відкрити синхронізоване вікно

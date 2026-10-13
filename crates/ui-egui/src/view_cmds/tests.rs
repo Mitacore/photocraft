@@ -157,22 +157,16 @@ fn arrange_layouts_floating_windows_and_matching() {
     assert_eq!(app.ui.windows.len(), 1);
 }
 
-/// Window › Arrange › NAFY: off by default, live and checkable only for exactly two
-/// equally sized documents; the document active when linking is the drawing (right pane).
+/// Linked navigation (`window.arrange.linkNavigation`, no menu item: the app presents Sync View):
+/// off by default, enabled only for exactly two equally sized documents; the document active when
+/// linking is the drawing (right pane).
 #[test]
 fn link_navigation_pairs_two_equal_documents_by_identity() {
     const LINK: &str = "window.arrange.linkNavigation";
-    assert!(is_live(LINK));
-    let items = menu_items(&app_with(0).0);
-    let item = items.iter().find(|i| i.id == LINK).unwrap();
-    assert_eq!(item.label, "NAFY (Linked Reference & Drawing Navigation)");
-    assert_eq!(item.path, ["Window", "Arrange"]);
-    for lang in crate::i18n::Lang::all().filter(|l| l.complete_menus()) {
-        assert!(crate::i18n::has(lang, &item.label), "{}: NAFY untranslated", lang.code());
-    }
+    assert!(!menu_items(&app_with(0).0).iter().any(|i| i.id == LINK), "not in the menus");
     // Different widths (100 / 110): refused, nothing changes.
     let (mut app, ctx) = app_with(2);
-    assert_eq!(checked(&app, LINK), Some(false));
+    assert_eq!(super::checked(&app, LINK), Some(false));
     assert_eq!(is_enabled(&app, LINK), Some(false));
     assert!(menu(&mut app, &ctx, LINK, json!({})).is_err());
     assert!(app.ui.view.linked_navigation.is_none());
@@ -187,7 +181,7 @@ fn link_navigation_pairs_two_equal_documents_by_identity() {
     app.session.set_active(0);
     let drawing_id = app.session.documents()[0].doc.id;
     menu(&mut app, &ctx, LINK, json!({})).unwrap();
-    assert_eq!(checked(&app, LINK), Some(true));
+    assert_eq!(super::checked(&app, LINK), Some(true));
     assert_eq!(app.ui.view.arrange, "twoUpVertical");
     let link = app.ui.view.linked_navigation.unwrap();
     assert_eq!(link.drawing, drawing_id, "the active document draws");
@@ -215,9 +209,9 @@ fn link_navigation_pairs_two_equal_documents_by_identity() {
     assert_eq!(follower.doc_size, reference.doc_size);
     // Explicit on/off, and toggling.
     menu(&mut app, &ctx, LINK, json!({"on": true})).unwrap();
-    assert_eq!(checked(&app, LINK), Some(true));
+    assert_eq!(super::checked(&app, LINK), Some(true));
     menu(&mut app, &ctx, LINK, json!({})).unwrap();
-    assert_eq!(checked(&app, LINK), Some(false));
+    assert_eq!(super::checked(&app, LINK), Some(false));
     assert!(menu(&mut app, &ctx, LINK, json!({"on": 3})).is_err());
     // A stale pair (e.g. restored UI state naming documents no longer open) switches itself off.
     app.ui.view.linked_navigation = Some(LinkedNavigation { drawing: photocraft_doc::DocId(u64::MAX), reference: photocraft_doc::DocId(u64::MAX - 1) });

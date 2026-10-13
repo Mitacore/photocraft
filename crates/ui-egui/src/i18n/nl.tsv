@@ -3886,8 +3886,6 @@ curves	Smooth	Vloeiend maken
 	Auto Add/Delete	Automatisch toevoegen/verwijderen
 	ICO is limited to 256 × 256 pixels	ICO is beperkt tot 256 × 256 pixels
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY (gekoppelde navigatie voor referentie en tekening)
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Weergave synchroniseren
+	Sync View — Open a synchronized window	Weergave synchroniseren — gesynchroniseerd venster openen

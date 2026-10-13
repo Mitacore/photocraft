@@ -3859,8 +3859,6 @@ cameraData	Lens	Lens
 	Ink Characteristics	Mürekkep Özellikleri
 	Solidity:	Doluluk:
 
-# Window > Arrange > NAFY (linked reference / drawing navigation)
-	NAFY (Linked Reference & Drawing Navigation)	NAFY (bağlantılı referans ve çizim gezinmesi)
-
-# Sync View (title bar button, Window > Arrange)
+# Sync View (options bar button and its tooltip, Window > Arrange)
 	Sync View	Görünümü eşitle
+	Sync View — Open a synchronized window	Görünümü eşitle — eşitlenmiş pencere aç
