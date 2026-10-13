@@ -279,6 +279,24 @@ fn waves_come_out_the_same_whatever_the_sampling_density() {
 }
 
 #[test]
+fn a_very_long_stroke_keeps_every_small_wave() {
+    // 40 waves 50 px high over 4800 px: long and complex, yet each wave is small next to its length.
+    let wave: Vec<P> = (0..=4800).map(|i| [50.0 + i as f64, 300.0 + 25.0 * (std::f64::consts::TAU * i as f64 / 120.0).sin()]).collect();
+    let drawn = noisy(&wave, 5.0, 1.5);
+    let s = recognize(&drawn, 1.0).expect("cleaned");
+    let Shape::Freeform { seg, closed: false } = &s else { panic!("an open freeform path: {s:?}") };
+    // More pieces than the 64 an earlier limit allowed: no cap truncates or rejects it.
+    assert!(seg.len() > 64, "{} pieces", seg.len());
+    let out = s.points();
+    assert!(dist(out[0], drawn[0]) < 1e-6 && dist(*out.last().unwrap(), *drawn.last().unwrap()) < 1e-6);
+    assert_follows(&s, &wave, 6.0, 6.0);
+    for k in 0..40 {
+        let crest = [50.0 + 30.0 + 120.0 * k as f64, 325.0];
+        assert!(out.iter().any(|q| dist(*q, crest) < 5.0), "crest {k} kept");
+    }
+}
+
+#[test]
 fn a_narrow_hairpin_stays_an_open_round_u_turn() {
     // Two parallel runs 24 px apart, joined by a round turn: ends close together, yet not a loop.
     let mut u = dense(&[[100.0, 100.0], [400.0, 100.0]]);
