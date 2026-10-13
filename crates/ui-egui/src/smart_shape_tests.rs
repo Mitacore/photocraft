@@ -135,17 +135,6 @@ fn ambiguous_or_accidental_strokes_stay_freehand() {
     let tooth = |i: usize| if (i / 5).is_multiple_of(2) { (i % 5) as f64 * 12.0 } else { (5 - i % 5) as f64 * 12.0 };
     let zigzag: Vec<P> = (0..41).map(|i| [20.0 + i as f64 * 5.0, 100.0 + tooth(i)]).collect();
     assert_eq!(recognize(&zigzag, 1.0), None, "zig-zag");
-    // An L: two straight strokes with a corner.
-    let mut l = line([20.0, 20.0], [20.0, 150.0], 30, 0.5);
-    l.extend(line([20.0, 150.0], [150.0, 150.0], 30, 0.5));
-    assert_eq!(recognize(&l, 1.0), None, "L");
-    // A closed triangle.
-    let tri = [[100.0, 20.0], [180.0, 160.0], [20.0, 160.0], [100.0, 20.0]];
-    let mut t = Vec::new();
-    for w in tri.windows(2) {
-        t.extend(line(w[0], w[1], 25, 0.5));
-    }
-    assert_eq!(recognize(&t, 1.0), None, "triangle");
     // A spiral (two turns, growing).
     let spiral: Vec<P> = (0..120)
         .map(|i| {
@@ -163,6 +152,149 @@ fn ambiguous_or_accidental_strokes_stay_freehand() {
     assert_eq!(recognize(&[[5.0, 5.0]], 1.0), None);
     assert_eq!(recognize(&[[5.0, 5.0]; 30], 1.0), None);
     assert_eq!(recognize(&[[f64::NAN, 1.0], [f64::INFINITY, 2.0]], 1.0), None);
+}
+
+/// A closed polygon through `verts` drawn by hand: `per_side` points along each side, wobbling by
+/// `amp`, back to the first vertex.
+fn polygon(verts: &[P], per_side: usize, amp: f64) -> Vec<P> {
+    let mut out = Vec::new();
+    for (k, &a) in verts.iter().enumerate() {
+        let b = verts[(k + 1) % verts.len()];
+        let mut side = line(a, b, per_side + 1, amp);
+        side.pop();
+        out.extend(side);
+    }
+    out.push(verts[0]);
+    out
+}
+
+/// `p` turned by `angle` about `c`.
+fn turned(p: P, c: P, angle: f64) -> P {
+    let (sin, cos) = angle.sin_cos();
+    let (dx, dy) = (p[0] - c[0], p[1] - c[1]);
+    [c[0] + dx * cos - dy * sin, c[1] + dx * sin + dy * cos]
+}
+
+/// The polygon's vertices, and that each expected vertex has one within `tol`.
+fn assert_vertices(s: &Shape, kind: &str, want: &[P], tol: f64) {
+    assert_eq!(s.kind(), kind, "{s:?}");
+    let Shape::Poly { v, n, .. } = *s else { panic!("{s:?}") };
+    assert_eq!(n, want.len(), "{s:?}");
+    for w in want {
+        assert!(v[..n].iter().any(|q| dist(*q, *w) < tol), "{kind}: no vertex near {w:?} in {:?}", &v[..n]);
+    }
+}
+
+#[test]
+fn recognises_triangles_upright_rotated_and_rough() {
+    let tri = [[120.0, 30.0], [210.0, 190.0], [30.0, 190.0]];
+    let s = recognize(&polygon(&tri, 24, 0.8), 1.0).expect("a triangle");
+    assert_vertices(&s, "triangle", &tri, 4.0);
+    // Turned 35° about its middle.
+    let c = [120.0, 140.0];
+    let rot: Vec<P> = tri.iter().map(|&p| turned(p, c, 35f64.to_radians())).collect();
+    let s = recognize(&polygon(&rot, 24, 0.8), 1.0).expect("a rotated triangle");
+    assert_vertices(&s, "triangle", &rot, 4.0);
+    // Rough: sides wobbling by 2.5 px, an uneven triangle. The vertices land where the sides meet.
+    let rough = [[60.0, 40.0], [230.0, 120.0], [80.0, 210.0]];
+    let s = recognize(&polygon(&rough, 20, 2.5), 1.0).expect("a rough triangle");
+    assert_vertices(&s, "triangle", &rough, 6.0);
+    // The outline is closed and passes through its vertices exactly.
+    let out = s.points();
+    assert_eq!(out.first(), out.last());
+    let Shape::Poly { v, .. } = s else { panic!("{s:?}") };
+    for q in &v[..3] {
+        assert!(out.iter().any(|p| dist(*p, *q) < 1e-9));
+    }
+}
+
+#[test]
+fn recognises_skewed_quadrilaterals_and_keeps_rectangles_and_squares() {
+    // A perspective-like trapezoid: no right angles, so not a rectangle.
+    let trap = [[80.0, 60.0], [180.0, 60.0], [240.0, 190.0], [20.0, 190.0]];
+    let s = recognize(&polygon(&trap, 20, 1.0), 1.0).expect("a trapezoid");
+    assert_vertices(&s, "quadrilateral", &trap, 5.0);
+    // An irregular four-sided form.
+    let quad = [[40.0, 40.0], [240.0, 70.0], [170.0, 220.0], [60.0, 160.0]];
+    let s = recognize(&polygon(&quad, 22, 1.0), 1.0).expect("a quadrilateral");
+    assert_vertices(&s, "quadrilateral", &quad, 6.0);
+    // Rectangles and squares still come out as such (rotated too).
+    let s = recognize(&rect([150.0, 120.0], 100.0, 50.0, 0.3, 20, 1.5), 1.0).unwrap();
+    assert_eq!(s.kind(), "rectangle");
+    let s = recognize(&rect([120.0, 120.0], 60.0, 60.0, 0.0, 16, 1.5), 1.0).unwrap();
+    assert_eq!(s.kind(), "square");
+}
+
+#[test]
+fn circles_and_thin_ellipses_never_turn_into_polygons() {
+    let s = recognize(&ellipse([150.0, 150.0], 80.0, 80.0, 0.0, 1.05, 90, 2.0), 1.0).unwrap();
+    assert_eq!(s.kind(), "circle");
+    let s = recognize(&ellipse([200.0, 150.0], 120.0, 36.0, 0.4, 1.0, 120, 1.0), 1.0).unwrap();
+    assert_eq!(s.kind(), "ellipse", "a thin ellipse is not a diamond");
+}
+
+#[test]
+fn a_wavy_flowing_line_becomes_a_clean_smooth_curve() {
+    // Two waves, drawn with a hand's jitter.
+    let wave = |x: f64| 100.0 + 20.0 * (std::f64::consts::TAU * (x - 20.0) / 160.0).sin();
+    let pts: Vec<P> = (0..120)
+        .map(|i| {
+            let x = 20.0 + 320.0 * i as f64 / 119.0;
+            [x, wave(x) + 1.5 * wobble(i)]
+        })
+        .collect();
+    let s = recognize(&pts, 1.0).expect("a curve");
+    assert_eq!(s.kind(), "curve");
+    let Shape::Spline { n, .. } = s else { panic!("{s:?}") };
+    assert!(n >= 2, "several smooth pieces for several waves: {n}");
+    let out = s.points();
+    // It follows the waves (no flattening) and keeps the ends.
+    assert!(out.iter().all(|p| (p[1] - wave(p[0])).abs() < 8.0), "off the waves");
+    assert!(dist(out[0], pts[0]) < 1e-6 && dist(*out.last().unwrap(), *pts.last().unwrap()) < 1e-6);
+    // And it is smooth: no kinks between neighbouring segments of the outline.
+    let kink = out
+        .windows(3)
+        .filter_map(|w| {
+            let (u, v) = (sub(w[1], w[0]), sub(w[2], w[1]));
+            let (lu, lv) = (u[0].hypot(u[1]), v[0].hypot(v[1]));
+            (lu > 1e-9 && lv > 1e-9).then(|| (dot(u, v) / (lu * lv)).clamp(-1.0, 1.0).acos())
+        })
+        .fold(0.0, f64::max);
+    assert!(kink < 0.25, "a kink of {kink} rad");
+}
+
+#[test]
+fn an_l_becomes_straight_edges_meeting_at_the_corner() {
+    let mut l = line([20.0, 20.0], [20.0, 150.0], 30, 0.8);
+    l.extend(line([20.0, 150.0], [150.0, 150.0], 30, 0.8));
+    let s = recognize(&l, 1.0).expect("a polyline");
+    assert_vertices(&s, "polyline", &[[20.0, 20.0], [20.0, 150.0], [150.0, 150.0]], 4.0);
+    assert_eq!(s.end().map(|e| dist(e, [150.0, 150.0]) < 4.0), Some(true), "dragged by its end");
+}
+
+#[test]
+fn a_held_triangle_commits_as_one_undoable_step() {
+    let mut app = setup(true);
+    let tri = [[120.0, 30.0], [210.0, 190.0], [30.0, 190.0]];
+    let pts = polygon(&tri, 24, 1.0);
+    let before = steps(&app);
+    draw(&mut app, &pts, |_| 1.0);
+    assert_eq!(hold(&mut app, 800.0), Some(Duration::ZERO), "corrected while held");
+    assert_eq!(app.drag.as_ref().and_then(|d| d.smart.as_ref()).and_then(Hold::shape).map(|s| s.kind()), Some("triangle"));
+    release(&mut app, *pts.last().unwrap());
+    assert_eq!(steps(&app), before + 1);
+    let committed = stroke_points(&app);
+    let (a, b) = (committed[0], *committed.last().unwrap());
+    assert!(dist([a[0], a[1]], [b[0], b[1]]) < 1e-6, "closed");
+    for v in tri {
+        assert!(committed.iter().any(|q| dist([q[0], q[1]], v) < 4.0), "a corner at {v:?}");
+    }
+    // Straight sides: the middle of the long side is painted, a point inside is not.
+    assert!(alpha(&app, 120, 190) > 0.9 && alpha(&app, 120, 140) < 0.05);
+    assert!(app.session.undo());
+    assert!(alpha(&app, 120, 190) < 0.05);
+    assert!(app.session.redo());
+    assert!(alpha(&app, 120, 190) > 0.9);
 }
 
 #[test]
@@ -212,12 +344,8 @@ fn hold(app: &mut PhotocraftApp, ms: f64) -> Option<Duration> {
     app.stylus.clock_ms += ms;
     let r = tick(app);
     // The frame's still pointer (the canvas sends the latest position each frame). A corrected
-    // line or curve has put its end under the pointer.
-    let p = match app.drag.as_ref().and_then(|d| d.smart.as_ref()).and_then(Hold::shape) {
-        Some(Shape::Line { b, .. }) => b,
-        Some(Shape::Curve { p }) => p[3],
-        _ => pointer,
-    };
+    // line, curve or polyline has put its end under the pointer.
+    let p = app.drag.as_ref().and_then(|d| d.smart.as_ref()).and_then(Hold::shape).and_then(|s| s.end()).unwrap_or(pointer);
     tool_event(app, ToolEvent::Move { x: p[0], y: p[1], pressure }, egui::Modifiers::NONE);
     r
 }

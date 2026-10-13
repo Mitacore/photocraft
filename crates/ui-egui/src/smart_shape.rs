@@ -1,9 +1,11 @@
 //! Smart Shape (Brush and Pencil options bar, off by default): draw a stroke, keep the pointer
 //! still at its end for [`DEFAULT_HOLD_MS`] (configurable), and the stroke becomes a clean
-//! straight line, smooth curve, circle, ellipse, rectangle or square. While still held, moving the
-//! pointer scales and turns the corrected shape about its centre (closed shapes) or its start
-//! (lines and curves). Releasing commits only the shape, as one `paint.stroke` and one Undo step;
-//! releasing before the hold keeps the freehand stroke exactly as drawn.
+//! straight line, smooth (possibly wavy) curve, straight-edged polyline, circle, ellipse, triangle,
+//! quadrilateral (perspective-like four-sided forms included), rectangle or square. While still
+//! held, moving the pointer scales and turns the corrected shape about its centre (closed shapes)
+//! or its start (lines, curves and polylines, whose end follows the pointer). Releasing commits
+//! only the shape, as one `paint.stroke` and one Undo step; releasing before the hold keeps the
+//! freehand stroke exactly as drawn.
 //!
 //! The shape goes through the normal drag / `LiveStroke` / commit path: its points replace the
 //! drag's, the live preview restarts from the document (so the freehand marks vanish rather than
@@ -14,16 +16,21 @@
 //! Recognition is a clean-room implementation of published methods; no third-party code is used:
 //! - arc-length resampling of the stroke to a fixed number of points;
 //! - straight lines: total least squares (principal component of the point covariance);
-//! - curves: a cubic Bézier with fixed end points fitted by least squares with chord-length
-//!   parameters and Newton reparameterisation (P. J. Schneider, "An Algorithm for Automatically
-//!   Fitting Digitized Curves", Graphics Gems, 1990);
+//! - curves: tangent-continuous cubic Béziers fitted by least squares with chord-length
+//!   parameters and Newton reparameterisation, split at the worst point until each piece is close
+//!   enough (P. J. Schneider, "An Algorithm for Automatically Fitting Digitized Curves", Graphics
+//!   Gems, 1990), so a wavy line keeps every wave;
 //! - circles and ellipses: centre and axes from the principal axes of the closed stroke, extents
 //!   in that frame, accepted on the mean normalised radial error;
 //! - rectangles and squares: corners as local maxima of the turning angle over a window, the
-//!   orientation from the corner-to-corner edges (angles averaged modulo 90°), extents from the
-//!   corners in that frame;
-//! - every candidate needs a normalised error under its threshold; anything else (handwriting,
-//!   zig-zags, spirals, triangles, tiny marks) stays a freehand stroke.
+//!   orientation from the corner-to-corner edges (angles averaged modulo 90°), sides from the
+//!   outline points nearest to them;
+//! - triangles, quadrilaterals and open polylines: Ramer–Douglas–Peucker simplification (closed
+//!   outlines split at their two farthest points), vertices kept only where the stroke turns
+//!   sharply, then made exact as the meeting points of lines fitted to each side;
+//! - closed candidates compete on the mean distance of the stroke from their outline, and each
+//!   also has its own limit; anything nothing fits (handwriting, zig-zags, spirals, tiny marks)
+//!   stays a freehand stroke.
 
 use std::time::Duration;
 
@@ -46,7 +53,11 @@ pub const TOOLTIP: &str = "Smart Shape — Hold at the end of a stroke to perfec
 const SAMPLES: usize = 64;
 /// Normalised error limits (fractions of the stroke length or size).
 const LINE_TOL: f64 = 0.03;
-const CURVE_TOL: f64 = 0.045;
+/// Largest distance of a smoothed curve from the stroke, as a fraction of its size (at least
+/// [`CURVE_TOL_MIN`] document pixels; each cubic piece aims for it, up to twice is accepted once
+/// the pieces run out). Tight enough that waves keep their height.
+const CURVE_TOL: f64 = 0.012;
+const CURVE_TOL_MIN: f64 = 1.5;
 const ELLIPSE_TOL: f64 = 0.085;
 const RECT_TOL: f64 = 0.05;
 /// A stroke whose ends are closer than this fraction of its length is a closed shape.
@@ -55,6 +66,14 @@ const CLOSED_GAP: f64 = 0.15;
 const CORNER_TURN: f64 = 0.96; // 55°
 /// Spacing of the generated shape points (document pixels).
 const SPACING: f64 = 2.0;
+/// Mean distance of the stroke from a fitted polygon, as a fraction of the stroke's size.
+const POLY_TOL: f64 = 0.035;
+/// A polygon vertex must turn at least this much (radians, over the corner window): rounder
+/// bends are curves, not corners.
+const VERTEX_TURN: f64 = 0.6; // 34°
+/// Most cubic pieces a smoothed curve may have, and most vertices of a polygon or polyline.
+pub const MAX_SEGMENTS: usize = 8;
+pub const MAX_POLY: usize = 5;
 
 type P = [f64; 2];
 
@@ -65,9 +84,18 @@ pub enum Shape {
         a: P,
         b: P,
     },
-    /// A cubic Bézier: start, two controls, end.
-    Curve {
-        p: [P; 4],
+    /// A smooth curve: `n` cubic Béziers (start, two controls, end), each starting where the last
+    /// ended with the same tangent.
+    Spline {
+        seg: [[P; 4]; MAX_SEGMENTS],
+        n: usize,
+    },
+    /// Straight edges through `n` vertices: a triangle or a quadrilateral when `closed`, else an
+    /// open polyline (an L, a V, a zig of up to four edges).
+    Poly {
+        v: [P; MAX_POLY],
+        n: usize,
+        closed: bool,
     },
     /// A circle when `rx == ry`.
     Ellipse {
@@ -94,7 +122,10 @@ impl Shape {
     pub fn kind(&self) -> &'static str {
         match self {
             Shape::Line { .. } => "line",
-            Shape::Curve { .. } => "curve",
+            Shape::Spline { .. } => "curve",
+            Shape::Poly { n: 3, closed: true, .. } => "triangle",
+            Shape::Poly { closed: true, .. } => "quadrilateral",
+            Shape::Poly { .. } => "polyline",
             Shape::Ellipse { rx, ry, .. } if (rx - ry).abs() <= 1e-9 => "circle",
             Shape::Ellipse { .. } => "ellipse",
             Shape::Rect { hw, hh, .. } if (hw - hh).abs() <= 1e-9 => "square",
@@ -106,8 +137,20 @@ impl Shape {
     fn pivot(&self) -> P {
         match self {
             Shape::Line { a, .. } => *a,
-            Shape::Curve { p } => p[0],
+            Shape::Spline { seg, .. } => seg[0][0],
+            Shape::Poly { v, closed: false, .. } => v[0],
+            Shape::Poly { v, n, closed: true } => mean(v.get(..*n).unwrap_or_default()),
             Shape::Ellipse { c, .. } | Shape::Rect { c, .. } => *c,
+        }
+    }
+
+    /// The end a line, curve or polyline is dragged by while adjusting (`None`: closed shapes).
+    fn end(&self) -> Option<P> {
+        match self {
+            Shape::Line { b, .. } => Some(*b),
+            Shape::Spline { seg, n } => seg.get(n.saturating_sub(1)).map(|s| s[3]),
+            Shape::Poly { v, n, closed: false } => v.get(n.saturating_sub(1)).copied(),
+            _ => None,
         }
     }
 
@@ -120,7 +163,8 @@ impl Shape {
         };
         match *self {
             Shape::Line { a, b } => Shape::Line { a: map(a), b: map(b) },
-            Shape::Curve { p } => Shape::Curve { p: p.map(map) },
+            Shape::Spline { seg, n } => Shape::Spline { seg: seg.map(|s| s.map(map)), n },
+            Shape::Poly { v, n, closed } => Shape::Poly { v: v.map(map), n, closed },
             Shape::Ellipse { c, rx, ry, angle, start, ccw } => Shape::Ellipse { c: map(c), rx: rx * s, ry: ry * s, angle: angle + rot, start, ccw },
             Shape::Rect { c, hw, hh, angle, start, ccw } => Shape::Rect { c: map(c), hw: hw * s, hh: hh * s, angle: angle + rot, start, ccw },
         }
@@ -134,10 +178,31 @@ impl Shape {
                 let n = count(dist(a, b), 2, 2000);
                 (0..n).map(|i| lerp(a, b, i as f64 / (n - 1) as f64)).collect()
             }
-            Shape::Curve { p } => {
-                let rough: f64 = (0..16).map(|i| dist(bezier(&p, i as f64 / 16.0), bezier(&p, (i + 1) as f64 / 16.0))).sum();
-                let n = count(rough, 8, 4000);
-                (0..n).map(|i| bezier(&p, i as f64 / (n - 1) as f64)).collect()
+            Shape::Spline { seg, n } => {
+                let mut out = Vec::new();
+                for p in seg.iter().take(n) {
+                    let rough: f64 = (0..16).map(|i| dist(bezier(p, i as f64 / 16.0), bezier(p, (i + 1) as f64 / 16.0))).sum();
+                    let m = count(rough, 4, 4000);
+                    // Each piece starts where the last ended: that point is kept once.
+                    let skip = usize::from(!out.is_empty());
+                    out.extend((skip..m).map(|i| bezier(p, i as f64 / (m - 1) as f64)));
+                }
+                out
+            }
+            Shape::Poly { v, n, closed } => {
+                let v = v.get(..n).unwrap_or_default();
+                let mut out = Vec::new();
+                let edges = if closed { n } else { n.saturating_sub(1) };
+                for k in 0..edges {
+                    let (Some(&a), Some(&b)) = (v.get(k), v.get((k + 1) % n.max(1))) else { break };
+                    let m = count(dist(a, b), 2, 2000);
+                    out.extend((0..m - 1).map(|s| lerp(a, b, s as f64 / (m - 1) as f64)));
+                }
+                // The last vertex (open) or the first again (closed) ends the outline exactly.
+                if let Some(&last) = if closed { v.first() } else { v.last() } {
+                    out.push(last);
+                }
+                out
             }
             Shape::Ellipse { c, rx, ry, angle, start, ccw } => {
                 // Ramanujan's perimeter approximation.
@@ -294,30 +359,61 @@ fn bezier_d2(p: &[P; 4], t: f64) -> P {
     ]
 }
 
-/// A cubic Bézier through the first and last point fitted to `pts`, and its largest distance from
-/// them (Schneider's least squares with Newton reparameterisation).
-fn fit_cubic(pts: &[P]) -> Option<([P; 4], f64)> {
+fn unit(v: P) -> Option<P> {
+    let l = v[0].hypot(v[1]);
+    (l > 1e-12 && l.is_finite()).then(|| [v[0] / l, v[1] / l])
+}
+
+/// Distance from `p` to the segment `a`–`b`.
+fn seg_dist(p: P, a: P, b: P) -> f64 {
+    let ab = sub(b, a);
+    let l2 = dot(ab, ab);
+    let t = if l2 > 1e-12 { (dot(sub(p, a), ab) / l2).clamp(0.0, 1.0) } else { 0.0 };
+    dist(p, lerp(a, b, t))
+}
+
+/// Mean distance from `pts` to the outline of `shape`, as a fraction of `size`: how closely the
+/// candidate follows what was drawn (the score candidates are ranked by).
+fn outline_error(shape: &Shape, pts: &[P], size: f64) -> f64 {
+    let outline = shape.points();
+    let total: f64 = pts.iter().map(|&p| outline.windows(2).map(|w| seg_dist(p, w[0], w[1])).fold(f64::MAX, f64::min)).sum();
+    let e = total / pts.len().max(1) as f64 / size.max(1e-9);
+    if e.is_finite() { e } else { f64::MAX }
+}
+
+/// A cubic Bézier from the first to the last point of `pts`, leaving the start along unit `t1` and
+/// arriving at the end against unit `t2` (both pointing into the curve), fitted by least squares
+/// with Newton reparameterisation (Schneider's method). Returns it, its largest distance from the
+/// points, and the index of the point that distance is at.
+fn fit_tangent(pts: &[P], t1: P, t2: P) -> Option<([P; 4], f64, usize)> {
     let (&p0, &p3) = (pts.first()?, pts.last()?);
+    let fallback = (dist(p0, p3).max(path_len(pts) / 2.0)) / 3.0;
     let mut ts = arc_fractions(pts);
-    let mut ctrl = [p0, lerp(p0, p3, 1.0 / 3.0), lerp(p0, p3, 2.0 / 3.0), p3];
+    let mut ctrl = [p0, [p0[0] + t1[0] * fallback, p0[1] + t1[1] * fallback], [p3[0] + t2[0] * fallback, p3[1] + t2[1] * fallback], p3];
     for _ in 0..4 {
-        let (mut a11, mut a12, mut a22, mut x1, mut x2) = (0.0, 0.0, 0.0, [0.0; 2], [0.0; 2]);
-        for (&t, p) in ts.iter().zip(pts) {
+        let (mut c11, mut c12, mut c22, mut x1, mut x2) = (0.0, 0.0, 0.0, 0.0, 0.0);
+        for (&t, &p) in ts.iter().zip(pts) {
             let u = 1.0 - t;
             let (b0, b1, b2, b3) = (u * u * u, 3.0 * t * u * u, 3.0 * t * t * u, t * t * t);
-            let r = [p[0] - b0 * p0[0] - b3 * p3[0], p[1] - b0 * p0[1] - b3 * p3[1]];
-            a11 += b1 * b1;
-            a12 += b1 * b2;
-            a22 += b2 * b2;
-            x1 = [x1[0] + b1 * r[0], x1[1] + b1 * r[1]];
-            x2 = [x2[0] + b2 * r[0], x2[1] + b2 * r[1]];
+            let (a1, a2) = ([t1[0] * b1, t1[1] * b1], [t2[0] * b2, t2[1] * b2]);
+            let rest = [p[0] - (b0 + b1) * p0[0] - (b2 + b3) * p3[0], p[1] - (b0 + b1) * p0[1] - (b2 + b3) * p3[1]];
+            c11 += dot(a1, a1);
+            c12 += dot(a1, a2);
+            c22 += dot(a2, a2);
+            x1 += dot(rest, a1);
+            x2 += dot(rest, a2);
         }
-        let det = a11 * a22 - a12 * a12;
+        let det = c11 * c22 - c12 * c12;
+        let (mut l1, mut l2) = (fallback, fallback);
         if det.abs() > 1e-12 {
-            ctrl[1] = [(a22 * x1[0] - a12 * x2[0]) / det, (a22 * x1[1] - a12 * x2[1]) / det];
-            ctrl[2] = [(a11 * x2[0] - a12 * x1[0]) / det, (a11 * x2[1] - a12 * x1[1]) / det];
+            (l1, l2) = ((c22 * x1 - c12 * x2) / det, (c11 * x2 - c12 * x1) / det);
         }
-        // Newton: move each parameter to the nearest point of the curve.
+        // A negative or vanishing handle would fold the curve back: use the plain third instead.
+        if !(l1 > 1e-6 && l2 > 1e-6 && l1.is_finite() && l2.is_finite()) {
+            (l1, l2) = (fallback, fallback);
+        }
+        ctrl[1] = [p0[0] + t1[0] * l1, p0[1] + t1[1] * l1];
+        ctrl[2] = [p3[0] + t2[0] * l2, p3[1] + t2[1] * l2];
         for (t, p) in ts.iter_mut().zip(pts) {
             let (q, d1, d2) = (sub(bezier(&ctrl, *t), *p), bezier_d1(&ctrl, *t), bezier_d2(&ctrl, *t));
             let den = dot(d1, d1) + dot(q, d2);
@@ -326,33 +422,88 @@ fn fit_cubic(pts: &[P]) -> Option<([P; 4], f64)> {
             }
         }
     }
-    let err = ts.iter().zip(pts).map(|(&t, &p)| dist(bezier(&ctrl, t), p)).fold(0.0, f64::max);
-    (ctrl.iter().all(|c| c[0].is_finite() && c[1].is_finite()) && err.is_finite()).then_some((ctrl, err))
+    let (at, err) = ts.iter().zip(pts).map(|(&t, &p)| dist(bezier(&ctrl, t), p)).enumerate().fold((0, 0.0), |m, (i, e)| if e > m.1 { (i, e) } else { m });
+    (ctrl.iter().all(|c| c[0].is_finite() && c[1].is_finite()) && err.is_finite()).then_some((ctrl, err, at))
+}
+
+/// Fit `pts[lo..=hi]` with tangent-continuous cubic pieces, splitting at the worst point until
+/// each piece is within `tol` (at most three splits deep, so at most [`MAX_SEGMENTS`] pieces).
+/// Returns the largest error left.
+#[allow(clippy::too_many_arguments)]
+fn fit_pieces(pts: &[P], lo: usize, hi: usize, t1: P, t2: P, tol: f64, depth: u32, out: &mut Vec<[P; 4]>) -> f64 {
+    let Some(part) = pts.get(lo..=hi) else { return f64::MAX };
+    let Some((ctrl, err, at)) = fit_tangent(part, t1, t2) else { return f64::MAX };
+    if err <= tol || hi - lo < 12 || depth >= 3 {
+        out.push(ctrl);
+        return err;
+    }
+    let mid = (lo + at).clamp(lo + 4, hi - 4);
+    let tc = match (pts.get(mid - 1), pts.get(mid + 1)) {
+        (Some(&a), Some(&b)) => unit(sub(b, a)).unwrap_or(t1),
+        _ => t1,
+    };
+    let left = fit_pieces(pts, lo, mid, t1, [-tc[0], -tc[1]], tol, depth + 1, out);
+    let right = fit_pieces(pts, mid, hi, tc, t2, tol, depth + 1, out);
+    left.max(right)
+}
+
+/// A smooth curve through `pts` (no corners): one or more tangent-continuous cubic pieces within
+/// `tol` of the points. Loose, wavy strokes come out as clean flowing curves.
+fn fit_spline(pts: &[P], tol: f64) -> Option<Shape> {
+    let n = pts.len();
+    if n < 8 {
+        return None;
+    }
+    let (&first, &last) = (pts.first()?, pts.last()?);
+    let t1 = unit(sub(*pts.get(3)?, first))?;
+    let t2 = unit(sub(*pts.get(n - 4)?, last))?;
+    let mut pieces = Vec::new();
+    let err = fit_pieces(pts, 0, n - 1, t1, t2, tol, 0, &mut pieces);
+    if err > 2.0 * tol || pieces.is_empty() || pieces.len() > MAX_SEGMENTS {
+        return None;
+    }
+    let mut seg = [[[0.0; 2]; 4]; MAX_SEGMENTS];
+    for (slot, piece) in seg.iter_mut().zip(&pieces) {
+        *slot = *piece;
+    }
+    Some(Shape::Spline { seg, n: pieces.len() })
+}
+
+/// The turn (radians) at sample `i` between the chords from `k` samples before to `k` after.
+/// `closed` wraps around; an open stroke's ends have no turn.
+fn local_turn(pts: &[P], i: usize, k: usize, closed: bool) -> f64 {
+    let n = pts.len();
+    if n == 0 {
+        return 0.0;
+    }
+    let at = |j: isize| -> Option<P> {
+        if closed { pts.get(j.rem_euclid(n as isize) as usize).copied() } else { usize::try_from(j).ok().and_then(|j| pts.get(j)).copied() }
+    };
+    let (i, k) = (i as isize, k as isize);
+    match (at(i - k), at(i), at(i + k)) {
+        (Some(a), Some(b), Some(c)) => {
+            let (u, v) = (sub(b, a), sub(c, b));
+            let (lu, lv) = (u[0].hypot(u[1]), v[0].hypot(v[1]));
+            if lu < 1e-9 || lv < 1e-9 { 0.0 } else { (dot(u, v) / (lu * lv)).clamp(-1.0, 1.0).acos() }
+        }
+        _ => 0.0,
+    }
+}
+
+/// The corner window used for `n` samples.
+fn corner_window(n: usize) -> usize {
+    (n / 16).max(2)
 }
 
 /// Indices of corners: local maxima of the turn over a window of `k` samples. `closed` wraps.
 fn corners(pts: &[P], closed: bool) -> Vec<(usize, f64)> {
     let n = pts.len();
-    let k = (n / 16).max(2);
+    let k = corner_window(n);
     if n < 2 * k + 1 {
         return Vec::new();
     }
-    let at = |i: isize| -> Option<P> {
-        if closed { pts.get(i.rem_euclid(n as isize) as usize).copied() } else { usize::try_from(i).ok().and_then(|i| pts.get(i)).copied() }
-    };
-    let turn = |i: usize| -> f64 {
-        let i = i as isize;
-        match (at(i - k as isize), at(i), at(i + k as isize)) {
-            (Some(a), Some(b), Some(c)) => {
-                let (u, v) = (sub(b, a), sub(c, b));
-                let (lu, lv) = (u[0].hypot(u[1]), v[0].hypot(v[1]));
-                if lu < 1e-9 || lv < 1e-9 { 0.0 } else { (dot(u, v) / (lu * lv)).clamp(-1.0, 1.0).acos() }
-            }
-            _ => 0.0,
-        }
-    };
     let range: Vec<usize> = if closed { (0..n).collect() } else { (k..n.saturating_sub(k)).collect() };
-    let turns: Vec<(usize, f64)> = range.into_iter().map(|i| (i, turn(i))).collect();
+    let turns: Vec<(usize, f64)> = range.into_iter().map(|i| (i, local_turn(pts, i, k, closed))).collect();
     let mut found: Vec<(usize, f64)> = Vec::new();
     for &(i, a) in &turns {
         if a < CORNER_TURN {
@@ -369,6 +520,154 @@ fn corners(pts: &[P], closed: bool) -> Vec<(usize, f64)> {
         found.push((i, a));
     }
     found
+}
+
+/// Ramer–Douglas–Peucker: the indices of `pts` that keep every point within `eps` of the
+/// simplified polyline (the first and last are always kept), in order.
+fn rdp(pts: &[P], eps: f64) -> Vec<usize> {
+    let n = pts.len();
+    if n < 3 {
+        return (0..n).collect();
+    }
+    let mut keep = vec![false; n];
+    keep[0] = true;
+    keep[n - 1] = true;
+    let mut stack = vec![(0, n - 1)];
+    while let Some((s, e)) = stack.pop() {
+        if e <= s + 1 {
+            continue;
+        }
+        let (Some(&a), Some(&b)) = (pts.get(s), pts.get(e)) else { continue };
+        let far = (s + 1..e).filter_map(|i| pts.get(i).map(|&p| (i, seg_dist(p, a, b)))).fold((s, 0.0), |m, (i, d)| if d > m.1 { (i, d) } else { m });
+        if far.1 > eps {
+            keep[far.0] = true;
+            stack.push((s, far.0));
+            stack.push((far.0, e));
+        }
+    }
+    keep.iter().enumerate().filter(|(_, k)| **k).map(|(i, _)| i).collect()
+}
+
+/// Where the lines `(p1, d1)` and `(p2, d2)` (points and unit directions) cross; `None` when they
+/// are close to parallel.
+fn intersect(l1: (P, P), l2: (P, P)) -> Option<P> {
+    let ((p1, d1), (p2, d2)) = (l1, l2);
+    let det = d1[0] * d2[1] - d1[1] * d2[0];
+    if det.abs() < 0.05 {
+        return None;
+    }
+    let w = sub(p2, p1);
+    let t = (w[0] * d2[1] - w[1] * d2[0]) / det;
+    Some([p1[0] + d1[0] * t, p1[1] + d1[1] * t])
+}
+
+/// The vertices of a polygon (or open polyline) whose corners are `pts[idx]`, made exact: each
+/// edge becomes the straight line fitted to the middle of its points, and each vertex the meeting
+/// point of its two edges (an open polyline's ends lie on their one edge). A hand's rounded or
+/// overshooting corners then land where the straight sides actually meet.
+fn refine_vertices(pts: &[P], idx: &[usize], closed: bool, size: f64) -> Vec<P> {
+    let (n, m) = (pts.len(), idx.len());
+    let edges = if closed { m } else { m.saturating_sub(1) };
+    let line = |e: usize| -> Option<(P, P)> {
+        let (&i, &j) = (idx.get(e)?, idx.get((e + 1) % m)?);
+        let len = if j > i { j - i } else { j + n - i };
+        let trim = len / 6;
+        let side: Vec<P> = (trim..=len - trim).filter_map(|t| pts.get((i + t) % n).copied()).collect();
+        if side.len() < 2 {
+            return None;
+        }
+        let c = mean(&side);
+        let (_, _, angle) = principal(&side, c);
+        Some((c, [angle.cos(), angle.sin()]))
+    };
+    let lines: Vec<Option<(P, P)>> = (0..edges).map(line).collect();
+    let edge = |e: Option<usize>| e.and_then(|e| lines.get(e).copied().flatten());
+    idx.iter()
+        .enumerate()
+        .map(|(v, &i)| {
+            let orig = pts.get(i).copied().unwrap_or_default();
+            let (before, after) = if closed { (Some((v + m - 1) % m), Some(v)) } else { (v.checked_sub(1), (v < edges).then_some(v)) };
+            match (edge(before), edge(after)) {
+                (Some(l1), Some(l2)) => intersect(l1, l2).filter(|q| dist(*q, orig) < 0.25 * size).unwrap_or(orig),
+                (Some((c, d)), None) | (None, Some((c, d))) => {
+                    let t = dot(sub(orig, c), d);
+                    [c[0] + d[0] * t, c[1] + d[1] * t]
+                }
+                (None, None) => orig,
+            }
+        })
+        .collect()
+}
+
+/// A triangle or quadrilateral for the closed outline `ring`: its corners found by simplifying it
+/// (RDP, split at its two farthest points) and kept only where the outline really turns, then made
+/// exact by fitting its sides. A near-rectangle comes out as the rectangle.
+fn fit_polygon(ring: &[P], size: f64, first: P, ccw: bool) -> Option<Shape> {
+    let n = ring.len();
+    if n < 12 {
+        return None;
+    }
+    let c = mean(ring);
+    let farthest = |from: P| ring.iter().enumerate().max_by(|a, b| dist(*a.1, from).total_cmp(&dist(*b.1, from))).map(|(i, _)| i);
+    let a = farthest(c)?;
+    let b = farthest(*ring.get(a)?)?;
+    let chain = |from: usize, to: usize| -> Vec<usize> {
+        let mut out = vec![from];
+        let mut i = from;
+        while i != to && out.len() <= n {
+            i = (i + 1) % n;
+            out.push(i);
+        }
+        out
+    };
+    let mut idx = Vec::new();
+    for ch in [chain(a, b), chain(b, a)] {
+        let side: Vec<P> = ch.iter().filter_map(|&i| ring.get(i).copied()).collect();
+        let keep = rdp(&side, 0.06 * size);
+        idx.extend(keep.iter().take(keep.len().saturating_sub(1)).filter_map(|&k| ch.get(k).copied()));
+    }
+    let k = corner_window(n);
+    idx.retain(|&i| local_turn(ring, i, k, true) >= VERTEX_TURN);
+    idx.sort_unstable();
+    idx.dedup();
+    let m = idx.len();
+    if !(3..=4).contains(&m) {
+        return None;
+    }
+    if m == 4 {
+        let found: Vec<(usize, f64)> = idx.iter().map(|&i| (i, local_turn(ring, i, k, true))).collect();
+        if let Some(r) = fit_rect(ring, &found, size, first, ccw) {
+            return Some(r);
+        }
+    }
+    let verts = refine_vertices(ring, &idx, true, size);
+    // Start at the vertex nearest to where the stroke began, going round as it was drawn.
+    let s = verts.iter().enumerate().min_by(|a, b| dist(*a.1, first).total_cmp(&dist(*b.1, first))).map_or(0, |(i, _)| i);
+    let mut v = [[0.0; 2]; MAX_POLY];
+    for (j, slot) in v.iter_mut().take(m).enumerate() {
+        *slot = *verts.get((s + j) % m)?;
+    }
+    let shape = Shape::Poly { v, n: m, closed: true };
+    (outline_error(&shape, ring, size) <= POLY_TOL).then_some(shape)
+}
+
+/// An open stroke with sharp corners as straight edges (an L, a V, a Z): two to four edges.
+fn fit_polyline(pts: &[P], size: f64) -> Option<Shape> {
+    let last = pts.len().checked_sub(1)?;
+    let k = corner_window(pts.len());
+    let mut idx = rdp(pts, 0.05 * size);
+    idx.retain(|&i| i == 0 || i == last || local_turn(pts, i, k, false) >= VERTEX_TURN);
+    let m = idx.len();
+    if !(3..=MAX_POLY).contains(&m) {
+        return None;
+    }
+    let verts = refine_vertices(pts, &idx, false, size);
+    let mut v = [[0.0; 2]; MAX_POLY];
+    for (slot, q) in v.iter_mut().zip(&verts) {
+        *slot = *q;
+    }
+    let shape = Shape::Poly { v, n: m, closed: false };
+    (outline_error(&shape, pts, size) <= POLY_TOL).then_some(shape)
 }
 
 /// Signed area (shoelace): negative when the outline runs counter-clockwise on screen (y down).
@@ -390,31 +689,29 @@ pub fn recognize(raw: &[P], zoom: f64) -> Option<Shape> {
     }
     let closed = dist(first, last) <= CLOSED_GAP * len;
     if !closed {
-        return recognize_open(&pts, size);
+        return recognize_open(&pts, &raw, size);
     }
     // Closed: drop the closing overlap so the outline is one loop.
     let ring: Vec<P> = pts.get(..pts.len().saturating_sub(1)).unwrap_or_default().to_vec();
     let found = corners(&ring, true);
     let ccw = signed_area(&pts) < 0.0;
+    // A clean four-cornered box: the rectangle or square, as before.
     if found.len() == 4
         && found.iter().all(|&(_, a)| a < 2.2)
         && let Some(r) = fit_rect(&ring, &found, size, first, ccw)
     {
         return Some(r);
     }
-    if found.len() <= 2 {
-        return fit_ellipse(&ring, first, ccw);
-    }
-    None
+    // Otherwise the candidates compete: an ellipse (when the outline has no more than two sharp
+    // turns) and a triangle or quadrilateral. The one that follows the stroke more closely wins;
+    // each must also pass its own limit, so an outline nothing fits stays freehand.
+    let candidates = [if found.len() <= 2 { fit_ellipse(&ring, first, ccw) } else { None }, fit_polygon(&ring, size, first, ccw)];
+    candidates.into_iter().flatten().map(|s| (outline_error(&s, &ring, size), s)).min_by(|a, b| a.0.total_cmp(&b.0)).map(|(_, s)| s)
 }
 
-fn recognize_open(pts: &[P], size: f64) -> Option<Shape> {
+fn recognize_open(pts: &[P], raw: &[P], size: f64) -> Option<Shape> {
     let (&first, &last) = (pts.first()?, pts.last()?);
     let chord = dist(first, last);
-    // Lengths and turning are measured on a coarse copy: a hand's wobble zig-zags the fine
-    // samples and would otherwise add up to length and turning that isn't in the shape.
-    let coarse = resample(pts, 16);
-    let len = path_len(&coarse).max(1e-9);
     // Straight line: small perpendicular spread, and it runs one way along its axis (no doubling
     // back): the chord spans nearly all of its extent along the axis.
     let m = mean(pts);
@@ -429,23 +726,16 @@ fn recognize_open(pts: &[P], size: f64) -> Option<Shape> {
         };
         return Some(Shape::Line { a: proj(first), b: proj(last) });
     }
-    // Smooth curve: no corner, not nearly closed, at most three quarters of a turn in all.
-    if chord < 0.25 * len || !corners(pts, false).is_empty() {
-        return None;
+    // Sharp corners: straight edges (an L, a V, a Z), never a curve forced round them. A corner is
+    // sharp when its turn stays as large over half the window; a smooth bend's turn halves with it.
+    let k = corner_window(pts.len());
+    let sharp = corners(pts, false).into_iter().any(|(i, a)| local_turn(pts, i, (k / 2).max(1), false) >= 0.7 * a);
+    if sharp {
+        return fit_polyline(pts, size);
     }
-    let total_turn: f64 = coarse
-        .windows(3)
-        .map(|w| {
-            let (u, v) = (sub(w[1], w[0]), sub(w[2], w[1]));
-            let c = u[0] * v[1] - u[1] * v[0];
-            c.atan2(dot(u, v)).abs()
-        })
-        .sum();
-    if total_turn > 1.5 * std::f64::consts::PI {
-        return None;
-    }
-    let (p, err) = fit_cubic(pts)?;
-    (err <= CURVE_TOL * size).then_some(Shape::Curve { p })
+    // Smooth: a clean flowing curve, in as many pieces as its bends need (finer samples, so a
+    // wavy line keeps every wave).
+    fit_spline(&resample(raw, 128), (CURVE_TOL * size).max(CURVE_TOL_MIN))
 }
 
 fn fit_ellipse(ring: &[P], first: P, ccw: bool) -> Option<Shape> {
@@ -688,11 +978,7 @@ pub fn tick(app: &mut PhotocraftApp) -> Option<Duration> {
     let new_poses: Vec<[f32; 3]> = fs.iter().map(|&f| poses.get(index_at(&fo, f)).or(poses.last()).copied().unwrap_or_default()).collect();
     // Lines and curves are adjusted by their end, which then follows the pointer exactly; closed
     // shapes scale and turn with the pointer's offset from where it rested.
-    let grab = match shape {
-        Shape::Line { b, .. } => b,
-        Shape::Curve { p } => p[3],
-        _ => raw.last().copied().unwrap_or(h.rest),
-    };
+    let grab = shape.end().or_else(|| raw.last().copied()).unwrap_or(h.rest);
     h.snapped = Some(Snapped { base: shape, current: shape, grab, original, poses, times });
     h.rebuild = true;
     let n = points.len();
