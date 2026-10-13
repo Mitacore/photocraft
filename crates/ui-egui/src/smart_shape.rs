@@ -828,19 +828,24 @@ fn sharp_corners(pts: &[P], k: usize, closed: bool) -> Vec<usize> {
     }
     let range: Vec<usize> = if closed { (0..n).collect() } else { (k..n - k).collect() };
     let turns: Vec<(usize, f64)> = range.into_iter().map(|i| (i, local_turn(pts, i, k, closed))).collect();
-    // The turn over half the window, at the sample or a neighbour (one jittery sample must not hide
-    // a corner).
-    let half = |i: usize| (i.saturating_sub(1)..=i + 1).map(|j| local_turn(pts, j, (k / 2).max(1), closed)).fold(0.0, f64::max);
+    // The sharpest sample over half the window within half a window of `i`, and its turn: jitter
+    // can put the largest full-window turn a few samples off the corner itself.
+    let h = (k / 2).max(1);
+    let sharpest = |i: usize| {
+        let from = if closed { i + n - h } else { i.saturating_sub(h) };
+        (from..=from + 2 * h).map(|j| (j % n, local_turn(pts, j % n, h, closed))).fold((i, 0.0), |m, t| if t.1 > m.1 { t } else { m })
+    };
     let near = |i: usize, j: usize| {
         let d = i.abs_diff(j);
         if closed { d.min(n - d) <= k } else { d <= k }
     };
     turns
         .iter()
-        .filter(|&&(i, a)| a >= FREEFORM_CORNER && half(i) >= 0.7 * a)
+        .filter(|&&(i, a)| a >= FREEFORM_CORNER && sharpest(i).1 >= 0.7 * a)
         .filter(|&&(i, a)| a >= 0.7 * local_turn(pts, i, if closed { 2 * k } else { (2 * k).min(i).min(n - 1 - i) }, closed))
         .filter(|&&(i, a)| !turns.iter().any(|&(j, b)| j != i && near(i, j) && (b > a || (b == a && j < i))))
-        .map(|&(i, _)| i)
+        // Placed exactly at the sharpest sample.
+        .map(|&(i, _)| sharpest(i).0)
         .collect()
 }
 
