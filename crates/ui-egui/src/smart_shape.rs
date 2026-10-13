@@ -166,6 +166,9 @@ const FREEFORM_TOL_SCREEN: f64 = 6.0;
 /// Freeform sampling step and corner window, at most this many screen points (same reason).
 const FINE_STEP_SCREEN: f64 = 3.0;
 const FINE_WINDOW_SCREEN: f64 = 24.0;
+/// ... and at least this many drawn samples, and this many times the hand's jitter (see [`jitter`]).
+const WINDOW_SAMPLES: f64 = 3.0;
+const WINDOW_JITTER: f64 = 18.0;
 /// A freeform corner turns at least this much (radians) over its window, about as much over half
 /// and over twice the window (see [`sharp_corners`]).
 const FREEFORM_CORNER: f64 = 0.8; // 46°
@@ -816,7 +819,7 @@ fn fit_polyline(pts: &[P], size: f64, zoom: f64) -> Option<Shape> {
 }
 
 /// Sharp corners of `pts` for freeform cleanup: where the turn over `k` samples is at least
-/// [`FREEFORM_CORNER`], at least 70% of it over half the window and at least 70% of the turn over
+/// [`FREEFORM_CORNER`], at least 70% of it over half the window and at least 90% of the turn over
 /// twice the window, and the largest within the window. A smooth bend's turn grows with the
 /// window and a real corner's does not; the narrow window alone mistakes jitter on a tight round
 /// turn for corners, the wide one alone a round wave crest, so a corner must pass both. `closed`
@@ -842,7 +845,7 @@ fn sharp_corners(pts: &[P], k: usize, closed: bool) -> Vec<usize> {
     turns
         .iter()
         .filter(|&&(i, a)| a >= FREEFORM_CORNER && sharpest(i).1 >= 0.7 * a)
-        .filter(|&&(i, a)| a >= 0.7 * local_turn(pts, i, if closed { 2 * k } else { (2 * k).min(i).min(n - 1 - i) }, closed))
+        .filter(|&&(i, a)| a >= 0.9 * local_turn(pts, i, if closed { 2 * k } else { (2 * k).min(i).min(n - 1 - i) }, closed))
         .filter(|&&(i, a)| !turns.iter().any(|&(j, b)| j != i && near(i, j) && (b > a || (b == a && j < i))))
         // Placed exactly at the sharpest sample.
         .map(|&(i, _)| sharpest(i).0)
@@ -862,7 +865,11 @@ fn fine_samples(raw: &[P], size: f64, zoom: f64) -> Option<(Vec<P>, usize)> {
     let n = ((len / (size * 0.004).max(1.0).min(FINE_STEP_SCREEN / zoom)).ceil() as usize).clamp(48, FINE_MAX);
     let pts = resample(raw, n);
     let step = len / (n - 1) as f64;
-    let k = (((size * 0.015).max(8.0).min(FINE_WINDOW_SCREEN / zoom) / step).round() as usize).clamp(2, (n / 8).max(2));
+    // Never narrower than a few drawn samples (a fast stroke's sparse points cut its corners over a
+    // whole sample) or than the hand's jitter allows to read reliably.
+    let raw_step = len / raw.len().saturating_sub(1).max(1) as f64;
+    let window = (size * 0.015).max(8.0).min(FINE_WINDOW_SCREEN / zoom).max(WINDOW_SAMPLES * raw_step).max(WINDOW_JITTER * jitter(raw));
+    let k = ((window / step).round() as usize).clamp(2, (n / 8).max(2));
     Some((pts, k))
 }
 
