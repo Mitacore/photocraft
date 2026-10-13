@@ -48,11 +48,15 @@ fn pair(h: &Harness<'_, PhotocraftApp>) -> (usize, usize) {
     crate::view_cmds::linked_pair(h.state()).expect("linked")
 }
 
-fn camera(v: &View) -> (f32, [f32; 2], f32) {
+/// Zoom, centre, rotation.
+type Camera = (f32, [f32; 2], f32);
+
+fn camera(v: &View) -> Camera {
     (v.zoom, v.center, v.rotation)
 }
 
-fn cameras(h: &Harness<'_, PhotocraftApp>) -> ((f32, [f32; 2], f32), (f32, [f32; 2], f32)) {
+/// `(drawing, reference)` cameras.
+fn cameras(h: &Harness<'_, PhotocraftApp>) -> (Camera, Camera) {
     let (d, r) = pair(h);
     (camera(&h.state().ui.views[d]), camera(&h.state().ui.views[r]))
 }
