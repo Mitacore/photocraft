@@ -165,7 +165,8 @@ fn link_navigation_pairs_two_equal_documents_by_identity() {
     assert!(is_live(LINK));
     let items = menu_items(&app_with(0).0);
     let item = items.iter().find(|i| i.id == LINK).unwrap();
-    assert_eq!((item.label.as_str(), item.path.as_slice()), ("NAFY (Linked Reference & Drawing Navigation)", &["Window".to_string(), "Arrange".to_string()][..]));
+    assert_eq!(item.label, "NAFY (Linked Reference & Drawing Navigation)");
+    assert_eq!(item.path, ["Window", "Arrange"]);
     for lang in crate::i18n::Lang::all().filter(|l| l.complete_menus()) {
         assert!(crate::i18n::has(lang, &item.label), "{}: NAFY untranslated", lang.code());
     }
