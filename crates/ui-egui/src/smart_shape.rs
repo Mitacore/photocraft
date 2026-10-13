@@ -157,6 +157,9 @@ pub const MAX_POLY: usize = 7;
 /// large enough to iron out a hand's jitter.
 const FREEFORM_TOL: f64 = 0.008;
 const FREEFORM_TOL_MIN: f64 = 2.0;
+/// The freeform tolerance is this many times the hand's typical jitter (see [`jitter`]), within
+/// the limits above.
+const FREEFORM_NOISE: f64 = 3.0;
 /// ... and at most this many screen points, however long the stroke: a long stroke keeps the small
 /// waves and bends along it (hand jitter is a few screen points at any zoom).
 const FREEFORM_TOL_SCREEN: f64 = 6.0;
@@ -165,7 +168,7 @@ const FINE_STEP_SCREEN: f64 = 3.0;
 const FINE_WINDOW_SCREEN: f64 = 24.0;
 /// A freeform corner turns at least this much (radians) over its window, about as much over half
 /// and over twice the window (see [`sharp_corners`]).
-const FREEFORM_CORNER: f64 = 1.0; // 57°
+const FREEFORM_CORNER: f64 = 0.8; // 46°
 /// Freeform splitting depth: never reached by balanced splits of at most [`FINE_MAX`] samples
 /// (each keeps at least a quarter, so about 20 levels), only a guard for the recursion.
 const FREEFORM_DEPTH: u32 = 32;
@@ -796,6 +799,12 @@ fn fit_polyline(pts: &[P], size: f64, zoom: f64) -> Option<Shape> {
     if verts.iter().any(|&q| poly_dist(q, pts) > POLY_TOL * size) {
         return None;
     }
+    // Nor does a polyline fold back on itself: an edge doubling back over the last (a scribble going
+    // to and fro) is no corner.
+    let folds = verts.windows(3).any(|t| unit(sub(t[1], t[0])).zip(unit(sub(t[2], t[1]))).is_some_and(|(u, v)| dot(u, v) < -0.94));
+    if folds {
+        return None;
+    }
     let mut v = [[0.0; 2]; MAX_POLY];
     for (slot, q) in v.iter_mut().zip(&verts) {
         *slot = *q;
@@ -807,7 +816,7 @@ fn fit_polyline(pts: &[P], size: f64, zoom: f64) -> Option<Shape> {
 }
 
 /// Sharp corners of `pts` for freeform cleanup: where the turn over `k` samples is at least
-/// [`FREEFORM_CORNER`], at least 70% of it over half the window and at least 80% of the turn over
+/// [`FREEFORM_CORNER`], at least 70% of it over half the window and at least 70% of the turn over
 /// twice the window, and the largest within the window. A smooth bend's turn grows with the
 /// window and a real corner's does not; the narrow window alone mistakes jitter on a tight round
 /// turn for corners, the wide one alone a round wave crest, so a corner must pass both. `closed`
@@ -826,7 +835,7 @@ fn sharp_corners(pts: &[P], k: usize, closed: bool) -> Vec<usize> {
     turns
         .iter()
         .filter(|&&(i, a)| a >= FREEFORM_CORNER && local_turn(pts, i, (k / 2).max(1), closed) >= 0.7 * a)
-        .filter(|&&(i, a)| a >= 0.8 * local_turn(pts, i, if closed { 2 * k } else { (2 * k).min(i).min(n - 1 - i) }, closed))
+        .filter(|&&(i, a)| a >= 0.7 * local_turn(pts, i, if closed { 2 * k } else { (2 * k).min(i).min(n - 1 - i) }, closed))
         .filter(|&&(i, a)| !turns.iter().any(|&(j, b)| j != i && near(i, j) && (b > a || (b == a && j < i))))
         .map(|&(i, _)| i)
         .collect()
@@ -887,40 +896,61 @@ fn freeform(raw: &[P], size: f64, zoom: f64, strength: Strength, closed: bool) -
     // Direction leaving sample `i` towards sample `j`.
     let dir = |i: usize, j: usize| -> Option<P> { unit(sub(*pts.get(j)?, *pts.get(i)?)) };
     let closure = if smooth_closure { dir(n - 4, 3) } else { None };
+    // The tolerance follows the hand's own jitter (a few times its typical size), so detail larger
+    // than the jitter stays, however long the stroke; bounded by a share of the stroke's size and
+    // a few screen points, then scaled by the cleanup strength.
+    let cap = (size * FREEFORM_TOL).max(FREEFORM_TOL_MIN).min(FREEFORM_TOL_SCREEN / zoom.max(1e-6));
+    let base = (FREEFORM_NOISE * jitter(raw)).clamp(FREEFORM_TOL_MIN.min(cap), cap) * strength.factor();
     // As many pieces as the course needs (a piece spans at least 8 samples, so at most n / 8),
     // splitting near the worst point but never at the very ends, so a long run with many bends is
-    // halved down to its bends instead of running out of splits.
-    let tol = (size * FREEFORM_TOL).max(FREEFORM_TOL_MIN).min(FREEFORM_TOL_SCREEN / zoom.max(1e-6)) * strength.factor();
-    let fit = Fit { tol, max_depth: FREEFORM_DEPTH, min_span: 8, balanced: true };
-    let mut pieces: Vec<[P; 4]> = Vec::new();
-    let mut worst: f64 = 0.0;
-    for w in breaks.windows(2) {
-        let (a, b) = (w[0], w[1]);
-        let (Some(&pa), Some(&pb)) = (pts.get(a), pts.get(b)) else { return None };
-        if b - a < 4 {
-            pieces.push([pa, lerp(pa, pb, 1.0 / 3.0), lerp(pa, pb, 2.0 / 3.0), pb]);
-            continue;
+    // halved down to its bends instead of running out of splits. A stroke too rough for the
+    // tolerance is retried a little looser rather than left raw.
+    let fit_at = |tol: f64| -> Option<Shape> {
+        let fit = Fit { tol, max_depth: FREEFORM_DEPTH, min_span: 8, balanced: true };
+        let mut pieces: Vec<[P; 4]> = Vec::new();
+        let mut worst: f64 = 0.0;
+        for w in breaks.windows(2) {
+            let (a, b) = (w[0], w[1]);
+            let (Some(&pa), Some(&pb)) = (pts.get(a), pts.get(b)) else { return None };
+            if b - a < 4 {
+                pieces.push([pa, lerp(pa, pb, 1.0 / 3.0), lerp(pa, pb, 2.0 / 3.0), pb]);
+                continue;
+            }
+            // Leaving an end of the run: towards the mean of its next few samples (at most a
+            // third of the run), so one jittery sample can't set off a hook.
+            let w = 4.min((b - a) / 3).max(1);
+            let ahead = |from: usize, step: isize| -> Option<P> {
+                let next: Vec<P> = (1..=w as isize).filter_map(|j| from.checked_add_signed(step * j).and_then(|i| pts.get(i)).copied()).collect();
+                unit(sub(mean(&next), *pts.get(from)?))
+            };
+            let t1 = match closure.filter(|_| a == 0) {
+                Some(t) => t,
+                None => ahead(a, 1).or_else(|| dir(a, a + 3))?,
+            };
+            let t2 = match closure.filter(|_| b == n - 1) {
+                Some(t) => [-t[0], -t[1]],
+                None => ahead(b, -1).or_else(|| dir(b, b - 3))?,
+            };
+            worst = worst.max(fit_pieces(&pts, a, b, t1, t2, fit, 0, &mut pieces));
         }
-        // Leaving an end of the run: towards the mean of its next few samples (up to a corner
-        // window, at most a third of the run), so one jittery sample can't set off a hook.
-        let w = k.min((b - a) / 3).max(1);
-        let ahead = |from: usize, step: isize| -> Option<P> {
-            let next: Vec<P> = (1..=w as isize).filter_map(|j| from.checked_add_signed(step * j).and_then(|i| pts.get(i)).copied()).collect();
-            unit(sub(mean(&next), *pts.get(from)?))
-        };
-        let t1 = match closure.filter(|_| a == 0) {
-            Some(t) => t,
-            None => ahead(a, 1).or_else(|| dir(a, a + 3))?,
-        };
-        let t2 = match closure.filter(|_| b == n - 1) {
-            Some(t) => [-t[0], -t[1]],
-            None => ahead(b, -1).or_else(|| dir(b, b - 3))?,
-        };
-        worst = worst.max(fit_pieces(&pts, a, b, t1, t2, fit, 0, &mut pieces));
+        // The fit is measured at the samples only; between them a piece must not bulge away either.
+        let strays = || pieces.iter().flat_map(|p| (1..16).map(|i| bezier(p, i as f64 / 16.0))).any(|q| poly_dist(q, &pts) > 2.0 * tol);
+        if worst <= 2.0 * tol && !strays() { Some(Shape::Freeform { seg: pieces, closed }) } else { None }
+    };
+    [1.0, 1.6, 2.6].into_iter().find_map(|m| fit_at(base * m))
+}
+
+/// The typical size of the hand's jitter in `raw` (document pixels): the median distance of each
+/// drawn point from the chord of its two neighbours. Smooth bends hardly move it (their offset
+/// over one sample is tiny) and the median ignores the few corners.
+fn jitter(raw: &[P]) -> f64 {
+    let mut d: Vec<f64> = raw.windows(3).filter(|w| dist(w[0], w[2]) > 1e-9).map(|w| seg_dist(w[1], w[0], w[2])).collect();
+    if d.is_empty() {
+        return 0.0;
     }
-    // The fit is measured at the samples only; between them a piece must not bulge away either.
-    let strays = || pieces.iter().flat_map(|p| (1..16).map(|i| bezier(p, i as f64 / 16.0))).any(|q| poly_dist(q, &pts) > 2.0 * tol);
-    if worst <= 2.0 * tol && !strays() { Some(Shape::Freeform { seg: pieces, closed }) } else { None }
+    let mid = d.len() / 2;
+    let (_, m, _) = d.select_nth_unstable_by(mid, f64::total_cmp);
+    *m
 }
 
 /// Distance from `p` to the polyline `poly`.

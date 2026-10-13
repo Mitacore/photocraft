@@ -342,7 +342,7 @@ fn cleanup_strength_sets_how_much_wobble_goes_but_never_the_corners() {
     let raw = turning(&drawn, 600);
     let mut smooth = Vec::new();
     for strength in Strength::ALL {
-        let s = recognize_with(&drawn, 1.0, Options { strength, ..Options::default() }).expect("cleaned");
+        let s = recognize_with(&drawn, 1.0, Options { strength, ..Options::default() }).unwrap_or_else(|| panic!("{strength:?}: not cleaned"));
         assert_eq!(s.kind(), "freeform", "{strength:?}");
         let out = s.points();
         assert!(dist(out[0], drawn[0]) < 1e-6 && dist(*out.last().unwrap(), *drawn.last().unwrap()) < 1e-6, "{strength:?}: ends kept");
