@@ -3886,9 +3886,9 @@ curves	Smooth	Vloeiend maken
 	Auto Add/Delete	Automatisch toevoegen/verwijderen
 	ICO is limited to 256 × 256 pixels	ICO is beperkt tot 256 × 256 pixels
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	Weergave synchroniseren
-	Sync View — Open a synchronized window	Weergave synchroniseren — gesynchroniseerd venster openen
+	Sync View — Link the zoom, pan and rotation of two open documents	Weergave synchroniseren — zoom, pannen en draaien van twee geopende documenten koppelen
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Slimme vorm — houd vast aan het einde van een streek om de vorm te perfectioneren

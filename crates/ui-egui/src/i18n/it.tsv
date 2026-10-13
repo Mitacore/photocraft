@@ -4091,9 +4091,9 @@ navigator	Zoom	Zoom
 	Auto Add/Delete	Aggiungi/elimina automaticamente
 	ICO is limited to 256 × 256 pixels	ICO è limitato a 256 × 256 pixel
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	Sincronizza vista
-	Sync View — Open a synchronized window	Sincronizza vista — apri una finestra sincronizzata
+	Sync View — Link the zoom, pan and rotation of two open documents	Sincronizza vista — collega zoom, scorrimento e rotazione di due documenti aperti
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Forma intelligente — tieni premuto alla fine di un tratto per perfezionarne la forma

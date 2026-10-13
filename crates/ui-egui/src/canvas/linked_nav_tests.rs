@@ -129,7 +129,7 @@ fn drawing_zoom_pan_and_rotation_drive_the_reference_live() {
     let mut h = linked();
     let before = snapshot(&h);
     let (d, _) = pair(&h);
-    // Fit on linking: both show the same fitted camera.
+    // On linking, the reference takes the drawing's camera (the drawing's own is kept).
     let (a, b) = cameras(&h);
     assert_eq!(a, b);
     // View › 200%, Rotate View 28°, Reset View: commands on the drawing.
@@ -266,12 +266,16 @@ fn closing_resizing_or_rearranging_turns_the_link_off_safely() {
     h.state_mut().run("image.imageSize", json!({"width": 320, "height": 180})).unwrap();
     h.run_steps(2);
     assert!(h.state().ui.view.linked_navigation.is_none());
-    // A third document.
+    assert_eq!(h.state().ui.view.arrange, "tabs", "the layout from before linking returns");
+    // A third document: unlinked, and back to tabs, so the new document is on its own tab rather
+    // than in a 2-up split it was never part of.
     let mut h = linked();
     h.state_mut().run("file.new", json!({"width": 640, "height": 360})).unwrap();
     h.state_mut().sync_views();
     h.run_steps(2);
     assert!(h.state().ui.view.linked_navigation.is_none());
+    assert_eq!(h.state().ui.view.arrange, "tabs");
+    assert_eq!(h.state().session.active_index(), Some(2), "the new document is the active tab");
     // Another arrangement or tabs.
     for id in ["window.arrange.twoUpHorizontal", "window.arrange.consolidateAllToTabs"] {
         let mut h = linked();

@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use serde_json::json;
 
 use super::*;
@@ -490,16 +492,24 @@ fn shift_lines_and_shift_click_connections_are_left_alone() {
 #[test]
 fn works_with_sync_view_on() {
     let mut app = setup(true);
+    // A second document of the same size, the drawing (active); linked with Sync View.
+    app.run("file.new", json!({"width": 240, "height": 240, "background": "transparent"})).unwrap();
+    app.sync_views();
     let ctx = egui::Context::default();
     crate::menus::invoke(&mut app, &ctx, crate::sync_view::COMMAND, json!({})).unwrap();
+    assert!(crate::sync_view::is_on(&app));
+    let reference = app.session.documents()[0].doc.clone();
+    let before = app.session.documents()[1].history.past_len();
     let (pts, _) = wobbly_line();
-    let before = steps(&app);
     draw(&mut app, &pts, |_| 1.0);
     hold(&mut app, 800.0);
+    assert!(app.drag.as_ref().is_some_and(is_shape));
     release(&mut app, *pts.last().unwrap());
-    assert_eq!(steps(&app), before + 1);
-    assert!(crate::sync_view::is_on(&app) && app.ui.windows.len() == 1, "Sync View stays on");
-    assert_eq!(app.session.documents().len(), 1, "one document");
+    let docs = app.session.documents();
+    assert_eq!(docs[1].history.past_len(), before + 1, "one step, on the drawing");
+    assert!(docs[1].doc.layers[0].surface().unwrap().rgba(120, 120)[3] > 0.9, "the shape is on the drawing");
+    assert!(Arc::ptr_eq(&reference, &docs[0].doc), "the reference document is untouched");
+    assert!(crate::sync_view::is_on(&app) && app.ui.windows.is_empty(), "Sync View stays on, no OS window");
 }
 
 /// The options bar: the Smart Shape toggle closes the Brush and Pencil controls, right before

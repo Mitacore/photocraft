@@ -157,13 +157,15 @@ fn arrange_layouts_floating_windows_and_matching() {
     assert_eq!(app.ui.windows.len(), 1);
 }
 
-/// Linked navigation (`window.arrange.linkNavigation`, no menu item: the app presents Sync View):
+/// Linked navigation (`window.arrange.linkNavigation`, shown as Window › Arrange › Sync View):
 /// off by default, enabled only for exactly two equally sized documents; the document active when
 /// linking is the drawing (right pane).
 #[test]
 fn link_navigation_pairs_two_equal_documents_by_identity() {
     const LINK: &str = "window.arrange.linkNavigation";
-    assert!(!menu_items(&app_with(0).0).iter().any(|i| i.id == LINK), "not in the menus");
+    let items = menu_items(&app_with(0).0);
+    let item = items.iter().find(|i| i.id == LINK).unwrap();
+    assert_eq!((item.label.as_str(), item.path.len()), ("Sync View", 2));
     // Different widths (100 / 110): refused, nothing changes.
     let (mut app, ctx) = app_with(2);
     assert_eq!(super::checked(&app, LINK), Some(false));

@@ -2473,6 +2473,9 @@ mod transform_type_tests;
 mod save_identity_tests;
 
 #[cfg(test)]
+mod doc_tabs_tests;
+
+#[cfg(test)]
 mod move_auto_select_tests;
 
 #[cfg(test)]

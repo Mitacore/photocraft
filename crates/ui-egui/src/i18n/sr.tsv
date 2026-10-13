@@ -4202,9 +4202,9 @@ shape	Appearance	Izgled
 	Ink Characteristics	Karakteristike mastila
 	Solidity:	Punoća:
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	Sinhronizuj prikaz
-	Sync View — Open a synchronized window	Sinhronizuj prikaz — otvori sinhronizovan prozor
+	Sync View — Link the zoom, pan and rotation of two open documents	Sinhronizuj prikaz — poveži zumiranje, pomeranje i rotaciju dva otvorena dokumenta
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Pametan oblik — zadržite na kraju poteza da usavršite njegov oblik

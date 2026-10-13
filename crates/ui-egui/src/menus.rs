@@ -62,8 +62,9 @@ pub const UI_COMMANDS: &[(&str, &str, &[&str], Option<&str>)] = &[
     ("view.rotateView", "Rotate View", &[], None),
     ("view.resetView", "Reset View", &["View"], None),
     ("window.newWindowForDocument", "New Window for Document", &["Window", "Arrange"], None),
-    // Not in Photoshop: a second window on the same document, cameras in step (options bar button).
-    ("window.arrange.syncView", "Sync View", &["Window", "Arrange"], None),
+    // Not in Photoshop: Sync View, linked navigation of two documents side by side (one shared
+    // camera; also the options bar button, sync_view.rs).
+    ("window.arrange.linkNavigation", "Sync View", &["Window", "Arrange"], None),
     ("window.toggle.layers", "Layers", &["Window"], Some("F7")),
     ("window.toggle.history", "History", &["Window"], None),
     ("window.toggle.properties", "Properties", &["Window"], None),
@@ -958,7 +959,7 @@ const PLACE_AFTER: &[(&str, &str)] = &[
     ("file.newFromClipboard", "file.new"),
     ("filter.render.relight", "filter.render.lightingEffects"),
     ("view.resetView", "view.flipHorizontal"),
-    ("window.arrange.syncView", "window.arrange.matchAll"),
+    ("window.arrange.linkNavigation", "window.arrange.matchAll"),
     ("filter.other.colorToAlpha", "filter.other.offset"),
 ];
 

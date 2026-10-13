@@ -4,151 +4,93 @@ use serde_json::json;
 
 use super::*;
 
-fn setup(docs: usize) -> (PhotocraftApp, egui::Context) {
+/// An app with `sizes.len()` documents of those sizes (the last one active).
+fn setup(sizes: &[[u32; 2]]) -> (PhotocraftApp, egui::Context) {
     let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
-    for i in 0..docs {
-        app.run("file.new", json!({"width": 640, "height": 360, "name": format!("doc{i}")})).unwrap();
+    for (i, [w, h]) in sizes.iter().enumerate() {
+        app.run("file.new", json!({"width": w, "height": h, "name": format!("doc{i}"), "background": "white"})).unwrap();
     }
     app.sync_views();
     (app, egui::Context::default())
 }
 
-fn click(app: &mut PhotocraftApp, ctx: &egui::Context) -> Result<Value, String> {
+fn click(app: &mut PhotocraftApp, ctx: &egui::Context) -> Result<serde_json::Value, String> {
     crate::menus::invoke(app, ctx, COMMAND, json!({}))
 }
 
-fn synced(app: &PhotocraftApp) -> &crate::state::DocWindow {
-    let id = window(app).expect("Sync View on");
-    app.ui.windows.iter().find(|w| w.id == id).expect("its window")
+fn enabled(app: &PhotocraftApp) -> bool {
+    crate::view_cmds::is_enabled(app, COMMAND).unwrap_or(false)
 }
 
 #[test]
-fn the_button_needs_a_document_and_shows_its_state() {
-    let (mut app, ctx) = setup(0);
+fn the_button_needs_two_documents_of_the_same_size() {
     assert!(crate::icons::exists("sync-view"));
     assert!(crate::menus::is_live(COMMAND));
-    assert_eq!(crate::view_cmds::is_enabled(&app, COMMAND), Some(false), "no document: disabled");
-    assert!(click(&mut app, &ctx).is_err());
-    assert!(!is_on(&app) && app.ui.windows.is_empty());
-    app.run("file.new", json!({"width": 64, "height": 64})).unwrap();
-    app.sync_views();
-    assert_eq!(crate::view_cmds::is_enabled(&app, COMMAND), Some(true));
-    assert_eq!(crate::view_cmds::checked(&app, COMMAND), Some(false));
-    click(&mut app, &ctx).unwrap();
-    assert_eq!(crate::view_cmds::checked(&app, COMMAND), Some(true), "active state while syncing");
+    for sizes in [&[][..], &[[640, 360]][..], &[[640, 360], [800, 600]][..], &[[640, 360], [640, 360], [640, 360]][..]] {
+        let (mut app, ctx) = setup(sizes);
+        assert!(!enabled(&app), "{} document(s): disabled", sizes.len());
+        assert!(click(&mut app, &ctx).is_err(), "refused, nothing scaled");
+        assert!(!is_on(&app) && app.ui.windows.is_empty());
+    }
+    let (app, _) = setup(&[[640, 360], [640, 360]]);
+    assert!(enabled(&app));
+    // The menu item: Window › Arrange › Sync View, no NAFY name anywhere.
     let items = crate::menus::menu_items(&app);
     let item = items.iter().find(|i| i.id == COMMAND).unwrap();
-    assert_eq!((item.label.as_str(), item.checked), ("Sync View", Some(true)));
+    assert_eq!(item.label, "Sync View");
+    assert_eq!(item.path, ["Window", "Arrange"]);
+    assert_eq!(item.checked, Some(false));
+    assert!(!items.iter().any(|i| i.label.contains("NAFY")), "no NAFY name in the menus");
+    assert!(!items.iter().any(|i| i.id == "window.arrange.syncView"), "no second, competing command");
     for lang in crate::i18n::Lang::all().filter(|l| l.complete_menus()) {
         for text in ["Sync View", TOOLTIP] {
             assert!(crate::i18n::has(lang, text), "{}: untranslated {text}", lang.code());
         }
     }
-    // The old reference/drawing pairing is no longer presented under its NAFY name.
-    assert!(!items.iter().any(|i| i.label.contains("NAFY") || i.id == "window.arrange.linkNavigation"));
 }
 
 #[test]
-fn one_click_opens_a_second_window_on_the_same_live_document() {
-    let (mut app, ctx) = setup(2);
-    app.session.set_active(0);
-    let doc = app.session.documents()[0].doc.clone();
-    let layers = doc.layers.len();
-    app.ui.views[0].zoom = 1.5;
-    app.ui.views[0].center = [100.0, 50.0];
-    app.ui.views[0].rotation = 12.0;
+fn one_click_links_the_two_documents_inside_the_workspace() {
+    let (mut app, ctx) = setup(&[[640, 360], [640, 360]]);
+    // The active document (the drawing) has its own camera: linking must not zoom or pan it.
+    app.ui.views[1].zoom = 1.75;
+    app.ui.views[1].center = [200.0, 150.0];
+    app.ui.views[1].rotation = 12.0;
+    app.ui.views[1].fit_pending = false;
+    let docs: Vec<_> = app.session.documents().iter().map(|d| d.doc.clone()).collect();
     click(&mut app, &ctx).unwrap();
     assert!(is_on(&app));
-    assert_eq!(app.ui.windows.len(), 1, "exactly one extra window");
-    let w = synced(&app);
-    assert_eq!(w.document, 0, "the active document, not another one");
-    assert_eq!((w.view.zoom, w.view.center, w.view.rotation), (1.5, [100.0, 50.0], 12.0), "it opens on the same camera");
-    assert!(!w.view.fit_pending);
-    // No new document, file or layer: the window shows the session's own document.
-    assert_eq!(app.session.documents().len(), 2);
-    assert!(Arc::ptr_eq(&doc, &app.session.documents()[0].doc));
-    assert_eq!(app.session.documents()[0].doc.layers.len(), layers);
-    // Painting lands in that one document, which both windows draw.
-    app.run("select.all", json!({})).unwrap();
-    app.run("edit.fill", json!({"color": "#ff0000"})).unwrap();
-    assert_eq!(app.session.documents().len(), 2);
-    assert_eq!(synced(&app).document, 0);
-    assert!(!Arc::ptr_eq(&doc, &app.session.documents()[0].doc), "the edit is in the shared document");
-    assert!(is_on(&app), "editing keeps syncing");
-}
-
-#[test]
-fn zoom_pan_and_rotation_follow_both_ways() {
-    let (mut app, ctx) = setup(1);
-    click(&mut app, &ctx).unwrap();
-    // Main window → second window.
-    app.ui.views[0].zoom = 2.0;
-    app.ui.views[0].center = [10.0, 20.0];
-    app.ui.views[0].rotation = 28.0;
-    assert!(!tick(&mut app), "the main view didn't need a change");
-    let w = synced(&app).view.clone();
-    assert_eq!((w.zoom, w.center, w.rotation), (2.0, [10.0, 20.0], 28.0));
-    // Second window → main window, when the user navigated there (pointer over it).
-    let id = window(&app).unwrap();
-    if let Some(w) = app.ui.windows.iter_mut().find(|w| w.id == id) {
-        w.view.zoom = 0.5;
-        w.view.center = [300.0, 200.0];
-        w.view.rotation = -45.0;
+    assert_eq!(crate::view_cmds::checked(&app, COMMAND), Some(true), "active state");
+    assert_eq!(app.ui.view.arrange, "twoUpVertical", "side by side in the document area");
+    assert!(app.ui.windows.is_empty(), "no extra OS window");
+    assert_eq!(app.session.documents().len(), 2, "both documents stay open, nothing duplicated");
+    let v = &app.ui.views[1];
+    assert_eq!((v.zoom, v.center, v.rotation, v.fit_pending), (1.75, [200.0, 150.0], 12.0, false), "no automatic zoom or pan");
+    for (before, now) in docs.iter().zip(app.session.documents()) {
+        assert!(Arc::ptr_eq(before, &now.doc), "linking changes no document");
     }
-    note_window_input(&mut app, id, true);
-    assert!(tick(&mut app), "the main view moved: repaint");
-    let v = &app.ui.views[0];
-    assert_eq!((v.zoom, v.center, v.rotation), (0.5, [300.0, 200.0], -45.0));
-    // The window clamping its own camera (no pointer there) stays local: no feedback loop.
-    if let Some(w) = app.ui.windows.iter_mut().find(|w| w.id == id) {
-        w.view.center = [310.0, 190.0];
-    }
-    assert!(!tick(&mut app));
-    assert_eq!(app.ui.views[0].center, [300.0, 200.0], "the main view stays put");
-    assert_eq!(synced(&app).view.center, [310.0, 190.0], "the window keeps its own adjustment");
-    assert!(!tick(&mut app), "and nothing bounces back on the next frame");
-    // The main view moving again re-syncs the window.
-    app.ui.views[0].center = [305.0, 205.0];
-    tick(&mut app);
-    assert_eq!(synced(&app).view.center, [305.0, 205.0]);
-    // Both moved in the same frame: the main window wins, and both end equal.
-    app.ui.views[0].zoom = 3.0;
-    if let Some(w) = app.ui.windows.iter_mut().find(|w| w.id == id) {
-        w.view.zoom = 4.0;
-    }
-    note_window_input(&mut app, id, true);
-    tick(&mut app);
-    assert_eq!((app.ui.views[0].zoom, synced(&app).view.zoom), (3.0, 3.0));
-    // Nothing moved: nothing changes.
-    let before = (app.ui.views[0].clone(), synced(&app).view.clone());
-    assert!(!tick(&mut app));
-    assert_eq!((app.ui.views[0].clone(), synced(&app).view.clone()), before);
-}
-
-#[test]
-fn clicking_again_closes_only_the_second_window() {
-    let (mut app, ctx) = setup(1);
-    let other = crate::view_cmds::float_window(&mut app, 0, 1);
-    click(&mut app, &ctx).unwrap();
-    assert_eq!(app.ui.windows.len(), 2);
-    let doc = app.session.documents()[0].doc.clone();
+    // Off again: both documents stay, each with its own camera from then on.
     click(&mut app, &ctx).unwrap();
     assert!(!is_on(&app));
-    assert_eq!(crate::view_cmds::checked(&app, COMMAND), Some(false), "the button resets");
-    assert_eq!(app.ui.windows.iter().map(|w| w.id).collect::<Vec<_>>(), [other], "another window stays open");
-    assert_eq!(app.session.documents().len(), 1);
-    assert!(Arc::ptr_eq(&doc, &app.session.documents()[0].doc), "the document is untouched");
-    // Explicit on/off, and bad params.
-    crate::menus::invoke(&mut app, &ctx, COMMAND, json!({"on": true})).unwrap();
-    crate::menus::invoke(&mut app, &ctx, COMMAND, json!({"on": true})).unwrap();
-    assert_eq!(app.ui.windows.len(), 2, "on while on opens no second copy");
-    crate::menus::invoke(&mut app, &ctx, COMMAND, json!({"on": false})).unwrap();
-    assert!(!is_on(&app));
-    assert!(crate::menus::invoke(&mut app, &ctx, COMMAND, json!({"on": "yes"})).is_err());
+    assert_eq!(crate::view_cmds::checked(&app, COMMAND), Some(false));
+    assert_eq!(app.session.documents().len(), 2, "turning it off closes nothing");
+    // Editing the other document now leaves the first one alone.
+    app.session.set_active(0);
+    let first = app.session.documents()[1].doc.clone();
+    app.run("layer.new.layer", json!({})).unwrap();
+    assert_eq!(app.session.documents()[0].doc.layers.len(), 2, "a layer in document A");
+    assert!(Arc::ptr_eq(&first, &app.session.documents()[1].doc), "document B unchanged");
+    // On again: stable, the drawing is the active document.
+    click(&mut app, &ctx).unwrap();
+    assert!(is_on(&app));
+    let link = app.ui.view.linked_navigation.unwrap();
+    assert_eq!(link.drawing, app.session.documents()[0].doc.id);
+    assert!(app.ui.windows.is_empty());
 }
 
-/// The whole app, drawn: the button ends the tool options bar (right of the Brush's painting
-/// symmetry button, in the same row), for any tool, and is disabled with no document.
+/// The whole app, drawn: the button ends the tool options bar (right after the Brush's Smart Shape
+/// toggle, in the same row), is disabled until two same-size documents are open, and a click turns
+/// linked navigation on and off without opening any window.
 #[test]
 fn the_button_sits_at_the_end_of_the_options_bar() {
     use egui_kittest::kittest::{NodeT, Queryable};
@@ -157,22 +99,30 @@ fn the_button_sits_at_the_end_of_the_options_bar() {
         let mut app = PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default());
         app.session.prefs.edit(|p| p.interface.language = "en".into());
         app.ui.tool = crate::state::Tool::Brush;
+        app.run("file.new", json!({"width": 640, "height": 360})).unwrap();
+        app.sync_views();
         app
     });
     h.run_steps(4);
-    assert!(h.get_by_label(TOOLTIP).accesskit_node().is_disabled(), "no document: disabled");
+    assert!(h.get_by_label(TOOLTIP).accesskit_node().is_disabled(), "one document: disabled");
     h.state_mut().run("file.new", json!({"width": 640, "height": 360})).unwrap();
     h.state_mut().sync_views();
     h.run_steps(4);
     let sync = h.get_by_label(TOOLTIP);
-    assert!(!sync.accesskit_node().is_disabled());
-    let (sync, symmetry) = (sync.rect(), h.get_by_label("Set painting symmetry options").rect());
-    assert!(sync.left() >= symmetry.right(), "right of the symmetry button: {sync:?} / {symmetry:?}");
-    assert!((sync.center().y - symmetry.center().y).abs() < 2.0, "same row: {sync:?} / {symmetry:?}");
-    // The Brush's last control before it is the Smart Shape toggle: Sync View ends the bar.
+    assert!(!sync.accesskit_node().is_disabled(), "two same-size documents: enabled");
+    let sync = sync.rect();
     let smart = h.get_by_label(crate::smart_shape::TOOLTIP).rect();
     assert!(sync.left() >= smart.right() && sync.left() - smart.right() < 16.0, "right after Smart Shape: {sync:?} / {smart:?}");
+    assert!((sync.center().y - smart.center().y).abs() < 2.0, "same row");
     assert_eq!((sync.width().round(), sync.height().round()), (24.0, 24.0), "the bar's icon size");
+    h.get_by_label(TOOLTIP).click();
+    h.run_steps(3);
+    assert!(is_on(h.state()), "a click links the documents");
+    assert!(h.state().ui.windows.is_empty(), "inside the workspace, no OS window");
+    h.get_by_label(TOOLTIP).click();
+    h.run_steps(3);
+    assert!(!is_on(h.state()), "and unlinks them");
+    assert_eq!(h.state().session.documents().len(), 2);
     // Every tool's bar with room ends with it (tools whose bars return early included).
     for tool in [crate::state::Tool::Move, crate::state::Tool::Hand, crate::state::Tool::Pen, crate::state::Tool::SpotHealing] {
         h.state_mut().ui.tool = tool;
@@ -183,29 +133,4 @@ fn the_button_sits_at_the_end_of_the_options_bar() {
     h.state_mut().ui.tool = crate::state::Tool::Crop;
     h.run_steps(3);
     assert!(h.query_all_by_label(TOOLTIP).count() <= 1, "Crop: at most one Sync View button");
-}
-
-#[test]
-fn closing_the_window_or_the_document_turns_sync_off() {
-    // The window closed by hand (`extra_windows` drops it).
-    let (mut app, ctx) = setup(1);
-    click(&mut app, &ctx).unwrap();
-    let id = window(&app).unwrap();
-    app.ui.windows.retain(|w| w.id != id);
-    tick(&mut app);
-    assert!(!is_on(&app));
-    assert_eq!(crate::view_cmds::checked(&app, COMMAND), Some(false));
-    assert_eq!(app.session.documents().len(), 1, "the document stays open");
-    // The document closed: its window goes, and Sync View with it.
-    let (mut app, ctx) = setup(2);
-    click(&mut app, &ctx).unwrap();
-    app.run("file.close", json!({})).unwrap();
-    tick(&mut app);
-    assert!(!is_on(&app) && app.ui.windows.is_empty());
-    // Consolidate All to Tabs closes every floating window.
-    let (mut app, ctx) = setup(1);
-    click(&mut app, &ctx).unwrap();
-    crate::menus::invoke(&mut app, &ctx, "window.arrange.consolidateAllToTabs", json!({})).unwrap();
-    tick(&mut app);
-    assert!(!is_on(&app));
 }

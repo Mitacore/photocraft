@@ -3859,9 +3859,9 @@ cameraData	Lens	Lens
 	Ink Characteristics	Mürekkep Özellikleri
 	Solidity:	Doluluk:
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	Görünümü eşitle
-	Sync View — Open a synchronized window	Görünümü eşitle — eşitlenmiş pencere aç
+	Sync View — Link the zoom, pan and rotation of two open documents	Görünümü eşitle — açık iki belgenin yakınlaştırma, kaydırma ve döndürmesini bağla
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Akıllı Şekil — şeklini mükemmelleştirmek için vuruşun sonunda basılı tutun

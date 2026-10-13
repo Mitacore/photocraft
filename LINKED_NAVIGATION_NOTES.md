@@ -3,8 +3,19 @@
 Base: `storytold/photocraft` main @ `6f85054288a564f9fbbccb99268ffdb34e581584`.
 Started from the starter patch `photocraft-linked-navigation.patch`, applied by hand and then reworked.
 
-## Linked reference/drawing navigation (formerly NAFY; no menu item now)
-- `window.arrange.linkNavigation`: off by default. It is enabled only when exactly 2
+## Sync View = linked reference/drawing navigation (the original NAFY, commit 1cab8a92)
+- Shown as the two-frames button at the right end of the tool options bar and as **Window › Arrange › Sync View**.
+  Both run `window.arrange.linkNavigation`, the original NAFY command. Tooltip: "Sync View — Link the zoom, pan and
+  rotation of two open documents".
+- The detached-window implementation (commits e52b43ba–5cc9f2ff: a second native window on the same document,
+  `sync_view::tick`, the `extra_windows` hooks, `window.arrange.syncView`) was removed. `extra_windows` is upstream's
+  again, and `sync_view.rs` now holds only the button.
+- Since this restoration, linking keeps the drawing's camera (the original re-fitted it), so there is no automatic
+  zoom or pan.
+- When the link ends by itself because the documents changed (a third one opened, such as Smart Object contents, or
+  one closed or resized), the arrangement from before linking (usually tabs) comes back, so every document is on its
+  own tab. Turning Sync View off by hand keeps the 2-up layout.
+- `window.arrange.linkNavigation` is off by default. It is enabled only when exactly 2
   documents are open and they have the same pixel size. Different sizes are refused and never scaled.
 - When on, the layout switches to 2-up vertical. The document that was active when you linked becomes the **drawing**
   (right pane, editable). The other document becomes the **reference** (left pane, view only).
@@ -35,22 +46,21 @@ Started from the starter patch `photocraft-linked-navigation.patch`, applied by 
 - Translations were added, because `complete_languages_translate_every_menu_string` fails without them.
 - Navigating the reference now moves the pair. In the patch, it was silently discarded.
 
-## Sync View (options bar button), the user-facing feature
-- One click on the two-frames button (right end of the tool options bar, after the Brush's painting symmetry button;
-  tooltip "Sync View — Open a synchronized window") or **Window › Arrange › Sync View**
-  opens a second native window on the active document. There is no dialog and no choice to make.
-- It is the same live document. No copy, file or layer is created, so painting and layer edits show in both windows.
-- Zoom, centre and rotation are copied either way (`sync_view::tick`, run before and after the extra windows are drawn).
-  If both views moved in the same frame, the main window wins.
-- The button is highlighted while on and disabled without a document. A second click closes only that window. Closing
-  it by hand, closing its document, or Consolidate All to Tabs turns Sync View off and resets the button.
-- Files: `sync_view.rs`, `sync_view_tests.rs`, `assets/icons/sync-view.svg` (original, listed in ATTRIBUTION.md),
-  `icon_data.rs`, `panels.rs` (button at the end of every tool's options), `canvas.rs` (`extra_windows`),
-  `view_cmds.rs`, `menus.rs`, `i18n/*.tsv`.
-- The NAFY name is gone from menus and tooltips. The two-document linked navigation below is still in the code as
-  `window.arrange.linkNavigation` (control channel / automation only, no menu item).
-- The second window shows the document but has no painting tools. This is how PhotoCraft's existing
-  New Window for Document works.
+## Sync View button
+- **Behaviour:** enabled with two open documents of the same size, and also while on, so it can be turned off. It
+  is highlighted while on.
+- **Space:** a full bar (a narrow window, or the Crop tool) leaves the button out rather than scroll. The command
+  stays in the menu.
+- **Files:** `sync_view.rs`, `sync_view_tests.rs`, `assets/icons/sync-view.svg` (original, listed in
+  ATTRIBUTION.md), `icon_data.rs`, `panels.rs`, `menus.rs`, `i18n/*.tsv`.
+- **Tests for tabs and Smart Object contents** (`doc_tabs_tests.rs`):
+  - Zoom, paint and Undo go to the active tab only.
+  - Edit Contents opens one tab: no duplicate, no OS window. Undo and Redo stay in the contents.
+  - Save Contents updates the parent as one step, and closing the contents keeps the parent.
+  - Opening contents while Sync View is on ends the link and returns to tabs.
+- **Fast Preview:** `.github/workflows/fast-preview-windows.yml` runs on every push. It builds a `dev`-profile exe as
+  the artifact `PhotoCraft-FastPreview-Win64`, plus a parallel job with fmt and the focused tests. The full checks
+  and release zip workflow is manual only now.
 
 ## Smart Shape (Brush and Pencil options bar, off by default)
 - **Behaviour:** draw, then keep the pointer still for the hold time and the stroke becomes a line, curve, circle,

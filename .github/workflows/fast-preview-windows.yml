@@ -1,0 +1,114 @@
+# Fast Preview: a runnable Windows x64 photocraft.exe for hands-on testing, without the full
+# release pipeline. The `dev` profile (Cargo.toml: dependencies at opt-level 2, PhotoCraft's own
+# crates at 1, line tables only) builds far faster than `release` (thin LTO, one codegen unit) and
+# is still quick enough to paint with. Dependencies come from the Rust cache, so a run mostly
+# compiles PhotoCraft's own crates. The C runtime is linked statically, as in packaging/, so the exe
+# needs no Visual C++ redistributable. Unsigned. Windows only; no Linux or macOS.
+#
+# Artifact: PhotoCraft-FastPreview-Win64 (photocraft.exe plus portable.txt, notes and licences).
+# A parallel job runs only the focused checks for the features being tested.
+name: Fast Preview (Windows x64)
+
+on:
+  push:
+    branches: [linked-navigation]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fast-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  preview:
+    name: preview exe (windows x64, dev profile)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: fast-preview
+          cache-on-failure: true
+
+      - name: Build photocraft.exe (dev profile)
+        shell: pwsh
+        env:
+          # Static CRT, as packaging/windows/package.ps1: runs on a PC without the VC++ runtime.
+          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
+        run: |
+          $env:PHOTOCRAFT_BUILD_SHA = "${{ github.sha }}"
+          $env:PHOTOCRAFT_BUILD_DATE = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
+          cargo build --locked -p photocraft --features heif --target x86_64-pc-windows-msvc
+          if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = 'target\x86_64-pc-windows-msvc\debug\photocraft.exe'
+          # x64 machine, Windows GUI subsystem (no console window), as package.ps1 checks.
+          $b = [IO.File]::ReadAllBytes($exe); $pe = [BitConverter]::ToInt32($b, 0x3C)
+          $machine = [BitConverter]::ToUInt16($b, $pe + 4); $subsystem = [BitConverter]::ToUInt16($b, $pe + 0x5C)
+          if ($machine -ne 0x8664 -or $subsystem -ne 2) { throw "photocraft.exe: machine $machine subsystem $subsystem" }
+          $dir = 'dist\PhotoCraft-FastPreview-Win64'
+          New-Item -ItemType Directory -Force $dir | Out-Null
+          Copy-Item $exe $dir
+          foreach ($f in 'LICENSE-MIT', 'LICENSE-APACHE', 'NOTICE', 'ATTRIBUTION.md') { if (Test-Path $f) { Copy-Item $f $dir } }
+          # Portable mode: settings and presets go to PhotoCraftData\ next to the exe.
+          Copy-Item 'packaging\windows\portable.txt' $dir
+          @"
+          PhotoCraft Fast Preview (UNSIGNED, dev build)
+          Built from ${{ github.repository }} @ ${{ github.sha }}
+
+          Double-click photocraft.exe. A development build: features are the real ones, some heavy
+          filters run slower than in a release build. Windows SmartScreen or an antivirus may ask
+          before the first start because the build is not code-signed; do not turn protection off.
+
+          Sync View: open two documents of the same size, click the two-frames button at the right end
+          of the tool options bar (or Window > Arrange > Sync View).
+          Smart Shape: Brush or Pencil, turn on the circle-and-square button, draw, hold still.
+          "@ | Set-Content -Encoding utf8 (Join-Path $dir 'READ-ME-FIRST.txt')
+          Get-FileHash (Join-Path $dir 'photocraft.exe') -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  photocraft.exe" } |
+            Set-Content -Encoding ascii (Join-Path $dir 'SHA256SUMS.txt')
+          Get-ChildItem $dir | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PhotoCraft-FastPreview-Win64
+          path: dist/PhotoCraft-FastPreview-Win64
+          retention-days: 14
+
+  focused-checks:
+    name: focused checks (windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: fast-preview-tests
+          cache-on-failure: true
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      # Only the areas this preview is about: Sync View / linked navigation, document tabs and
+      # Smart Object contents, Smart Shape, the channel view fix. The full suite and Clippy run in
+      # linked-navigation-windows.yml (manual).
+      - name: Focused tests
+        if: ${{ !cancelled() }}
+        run: cargo test -p photocraft-ui-egui --lib --locked -- sync_view linked_nav link_navigation doc_tabs smart_shape channel_view

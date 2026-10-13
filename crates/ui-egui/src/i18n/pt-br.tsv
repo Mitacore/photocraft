@@ -3916,9 +3916,9 @@ layerLabel	No Color	Sem cor
 	Auto Add/Delete	Adicionar/excluir automaticamente
 	ICO is limited to 256 × 256 pixels	ICO é limitado a 256 × 256 pixels
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	Sincronizar exibição
-	Sync View — Open a synchronized window	Sincronizar exibição — abrir uma janela sincronizada
+	Sync View — Link the zoom, pan and rotation of two open documents	Sincronizar exibição — vincular zoom, deslocamento e rotação de dois documentos abertos
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Forma inteligente — segure no fim de um traço para aperfeiçoar sua forma

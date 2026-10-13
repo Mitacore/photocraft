@@ -3128,9 +3128,9 @@ curves	Smooth	Lisser
 	Auto Add/Delete	Ajout/suppr. auto
 	ICO is limited to 256 × 256 pixels	Le format ICO est limité à 256 × 256 pixels
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	Synchroniser la vue
-	Sync View — Open a synchronized window	Synchroniser la vue — ouvrir une fenêtre synchronisée
+	Sync View — Link the zoom, pan and rotation of two open documents	Synchroniser la vue — lier le zoom, le défilement et la rotation de deux documents ouverts
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Forme intelligente — maintenez à la fin d’un tracé pour parfaire sa forme

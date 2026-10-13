@@ -2735,9 +2735,9 @@ curves	Smooth	平滑
 	Auto Add/Delete	自动添加/删除
 	ICO is limited to 256 × 256 pixels	ICO 最大为 256 × 256 像素
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	同步视图
-	Sync View — Open a synchronized window	同步视图 — 打开同步窗口
+	Sync View — Link the zoom, pan and rotation of two open documents	同步视图 — 联动两个打开文档的缩放、平移和旋转
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	智能形状 — 在笔画末尾停住即可修正形状

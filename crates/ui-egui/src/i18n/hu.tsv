@@ -4048,9 +4048,9 @@ cameraRaw	Yellow	Sárga
 	Ink Characteristics	Festék jellemzői
 	Solidity:	Fedőképesség:
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	Nézet szinkronizálása
-	Sync View — Open a synchronized window	Nézet szinkronizálása — szinkronizált ablak megnyitása
+	Sync View — Link the zoom, pan and rotation of two open documents	Nézet szinkronizálása — két megnyitott dokumentum nagyításának, mozgatásának és forgatásának összekapcsolása
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Intelligens alakzat — a vonás végén tartva tökéletesíti az alakját

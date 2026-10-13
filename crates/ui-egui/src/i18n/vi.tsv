@@ -3612,9 +3612,9 @@ curves	Smooth	Làm mượt
 	Auto Add/Delete	Tự động thêm/xóa
 	ICO is limited to 256 × 256 pixels	ICO giới hạn ở 256 × 256 pixel
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	Đồng bộ chế độ xem
-	Sync View — Open a synchronized window	Đồng bộ chế độ xem — mở cửa sổ đồng bộ
+	Sync View — Link the zoom, pan and rotation of two open documents	Đồng bộ chế độ xem — liên kết thu phóng, kéo và xoay của hai tài liệu đang mở
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Hình dạng thông minh — giữ ở cuối nét để hoàn thiện hình dạng

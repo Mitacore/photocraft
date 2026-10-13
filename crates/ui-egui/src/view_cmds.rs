@@ -102,8 +102,9 @@ pub struct ViewOptions {
     /// Linked navigation: the drawing/reference pair whose cameras move together
     /// (`None` = off).
     pub linked_navigation: Option<LinkedNavigation>,
-    /// Sync View: the second window kept on the same camera (`None` = off; `sync_view.rs`).
-    pub sync_view: Option<crate::sync_view::SyncView>,
+    /// The arrangement before linked navigation switched to 2-up, restored when the link ends by
+    /// itself because the documents changed (a third one opened, e.g. Smart Object contents).
+    pub linked_arrange_before: Option<String>,
     /// Type › Font Preview Size: "small" | "medium" | "large" | "extraLarge" | "huge".
     pub font_preview_size: String,
     /// Type › Language Options: "defaultFeatures" | "eastAsianFeatures" | "middleEasternFeatures",
@@ -137,7 +138,7 @@ impl Default for ViewOptions {
             pixel_art_preview: false,
             arrange: "tabs".into(),
             linked_navigation: None,
-            sync_view: None,
+            linked_arrange_before: None,
             font_preview_size: "medium".into(),
             language_features: "defaultFeatures".into(),
             middle_eastern_composer: false,
@@ -438,7 +439,6 @@ pub fn handles(id: &str) -> bool {
                     | "floatAllInWindows"
                     | "newWindowForDocument"
                     | "linkNavigation"
-                    | "syncView"
                     | "matchZoom"
                     | "matchLocation"
                     | "matchRotation"
@@ -491,7 +491,6 @@ pub fn is_enabled(app: &PhotocraftApp, id: &str) -> Option<bool> {
             "consolidateAllToTabs" => true,
             "floatInWindow" | "newWindowForDocument" => doc,
             "linkNavigation" => app.ui.view.linked_navigation.is_some() || same_size_pair(app),
-            "syncView" => doc || crate::sync_view::is_on(app),
             "matchZoom" | "matchLocation" | "matchRotation" | "matchAll" => app.session.documents().len() > 1 || !app.ui.windows.is_empty(),
             _ => {
                 app.session.documents().len() > 1
@@ -531,9 +530,6 @@ pub fn checked(app: &PhotocraftApp, id: &str) -> Option<bool> {
     }
     if id == "window.arrange.linkNavigation" {
         return Some(o.linked_navigation.is_some());
-    }
-    if id == crate::sync_view::COMMAND {
-        return Some(o.sync_view.is_some());
     }
     if let Some(k) = id.strip_prefix("window.arrange.")
         && LAYOUTS.contains(&k)
@@ -870,7 +866,18 @@ pub(crate) fn enforce_linked_navigation(app: &mut PhotocraftApp) {
         return;
     }
     match linked_pair(app) {
-        None => app.ui.view.linked_navigation = None,
+        None => {
+            app.ui.view.linked_navigation = None;
+            // The documents changed under the link (a third one opened, such as Smart Object
+            // contents, or one closed): back to the arrangement from before linking, so every
+            // document is on its own tab again rather than in a 2-up split it was never part of.
+            // A layout the user picked meanwhile stays.
+            if let Some(before) = app.ui.view.linked_arrange_before.take()
+                && app.ui.view.arrange == "twoUpVertical"
+            {
+                app.ui.view.arrange = before;
+            }
+        }
         Some((drawing, _)) => {
             if app.session.active_index() != Some(drawing) {
                 app.session.set_active(drawing);
@@ -885,7 +892,9 @@ fn link_navigation(app: &mut PhotocraftApp, p: &Value) -> Result<Value, String> 
         Some(v) => v.as_bool().ok_or("on must be a boolean")?,
     };
     if !on {
+        // Turned off by the user: the 2-up layout stays, each document navigating on its own.
         app.ui.view.linked_navigation = None;
+        app.ui.view.linked_arrange_before = None;
         return Ok(json!({"linkedNavigation": false}));
     }
     if !same_size_pair(app) {
@@ -897,14 +906,16 @@ fn link_navigation(app: &mut PhotocraftApp, p: &Value) -> Result<Value, String> 
     let docs = app.session.documents();
     let id = |i: usize| docs.get(i).map(|d| d.doc.id).ok_or("no document");
     let link = LinkedNavigation { drawing: id(drawing)?, reference: id(reference)? };
+    if app.ui.view.linked_navigation.is_none() {
+        let before = &app.ui.view.arrange;
+        app.ui.view.linked_arrange_before = (before != "twoUpVertical").then(|| before.clone());
+    }
     app.ui.view.linked_navigation = Some(link);
     app.ui.view.arrange = "twoUpVertical".into();
     // Floating document windows would show the reference with tools active.
     app.ui.windows.clear();
-    // The drawing fits its pane; the reference follows its camera from the first frame.
-    if let Some(v) = app.ui.views.get_mut(drawing) {
-        v.fit_pending = true;
-    }
+    // The drawing keeps its camera (no automatic zoom or pan when linking); the reference takes the
+    // same camera from the first frame.
     Ok(json!({"linkedNavigation": true, "drawing": drawing, "reference": reference}))
 }
 
@@ -923,7 +934,6 @@ fn arrange(app: &mut PhotocraftApp, k: &str, p: &Value) -> Result<Value, String>
     }
     match k {
         "linkNavigation" => link_navigation(app, p),
-        "syncView" => crate::sync_view::command(app, p),
         "consolidateAllToTabs" => {
             app.ui.view.arrange = "tabs".into();
             app.ui.windows.clear();

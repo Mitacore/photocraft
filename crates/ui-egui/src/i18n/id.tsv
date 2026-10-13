@@ -3115,9 +3115,9 @@ curves	Smooth	Haluskan
 	Auto Add/Delete	Tambah/Hapus Otomatis
 	ICO is limited to 256 × 256 pixels	ICO dibatasi hingga 256 × 256 piksel
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	Sinkronkan tampilan
-	Sync View — Open a synchronized window	Sinkronkan tampilan — buka jendela tersinkron
+	Sync View — Link the zoom, pan and rotation of two open documents	Sinkronkan tampilan — tautkan zoom, geser, dan putaran dua dokumen yang terbuka
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Bentuk Cerdas — tahan di akhir goresan untuk menyempurnakan bentuknya

@@ -3824,9 +3824,9 @@ curves	Smooth	Εξομάλυνση
 	Auto Add/Delete	Αυτόματη προσθήκη/διαγραφή
 	ICO is limited to 256 × 256 pixels	Το ICO περιορίζεται σε 256 × 256 εικονοστοιχεία
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	Συγχρονισμός προβολής
-	Sync View — Open a synchronized window	Συγχρονισμός προβολής — άνοιγμα συγχρονισμένου παραθύρου
+	Sync View — Link the zoom, pan and rotation of two open documents	Συγχρονισμός προβολής — σύνδεση ζουμ, μετακίνησης και περιστροφής δύο ανοιχτών εγγράφων
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Έξυπνο σχήμα — κρατήστε στο τέλος μιας πινελιάς για να τελειοποιήσετε το σχήμα της

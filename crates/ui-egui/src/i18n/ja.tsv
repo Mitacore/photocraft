@@ -3804,9 +3804,9 @@ curves	Smooth	スムーズ
 	Copy Texture to Other Tools	テクスチャを他のツールにコピー
 	ICO is limited to 256 × 256 pixels	ICO は 256 × 256 ピクセルまでです
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	ビューを同期
-	Sync View — Open a synchronized window	ビューを同期 — 同期したウィンドウを開く
+	Sync View — Link the zoom, pan and rotation of two open documents	ビューを同期 — 開いている 2 つのドキュメントのズーム・パン・回転をリンク
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	スマートシェイプ — ストロークの終わりで止めると形を整えます

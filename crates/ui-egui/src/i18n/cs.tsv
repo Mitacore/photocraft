@@ -3735,9 +3735,9 @@ navigator	Zoom	Zvětšení
 	Auto Add/Delete	Automaticky přidat/odstranit
 	ICO is limited to 256 × 256 pixels	ICO je omezen na 256 × 256 pixelů
 
-# Sync View (options bar button and its tooltip, Window > Arrange)
+# Sync View: linked navigation (options bar button and its tooltip, Window > Arrange)
 	Sync View	Synchronizovat zobrazení
-	Sync View — Open a synchronized window	Synchronizovat zobrazení — otevřít synchronizované okno
+	Sync View — Link the zoom, pan and rotation of two open documents	Synchronizovat zobrazení — propojit lupu, posun a otočení dvou otevřených dokumentů
 
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Chytrý tvar — podržením na konci tahu zdokonalíte jeho tvar

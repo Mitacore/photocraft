@@ -5,9 +5,9 @@
 # artifact of the run. The official signed release stays in release.yml.
 name: Linked navigation (Windows x64 portable)
 
+# Manual only (Actions › Run workflow): pushes build the quicker Fast Preview instead
+# (fast-preview-windows.yml).
 on:
-  push:
-    branches: [linked-navigation]
   workflow_dispatch:
 
 permissions:
