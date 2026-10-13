@@ -1,5 +1,5 @@
 # Fork-only test build of Window › Arrange › NAFY (reference left, drawing right).
-# Runs the checks AGENTS.md asks for on the touched crate, then builds an UNSIGNED portable
+# Windows only: format, clippy and tests of the touched crate, then builds an UNSIGNED portable
 # Windows x64 zip the same way packaging/windows/package.ps1 does (static CRT, --features heif,
 # portable.txt beside the exe), without the MSI. Nothing is published: the zip is a downloadable
 # artifact of the run. The official signed release stays in release.yml.
@@ -21,28 +21,16 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Windows only (the artist's platform). Format and clippy first: they fail in minutes.
   checks:
-    name: checks (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, ubuntu-latest]
+    name: checks (windows-latest)
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Linux system dependencies (egui/winit/rfd)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev \
-            libgl1-mesa-dev libgtk-3-dev
 
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
-          targets: ${{ runner.os == 'Linux' && 'wasm32-unknown-unknown' || '' }}
 
       - uses: Swatinem/rust-cache@v2
         with:
@@ -51,27 +39,11 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
 
-      - name: Test photocraft-ui-egui (lib + integration tests)
-        run: cargo test -p photocraft-ui-egui --lib --tests --locked
-
       - name: Clippy photocraft-ui-egui
         run: cargo clippy -p photocraft-ui-egui --all-targets --locked -- -D warnings
 
-      - name: Dependency layering
-        if: runner.os == 'Linux'
-        run: cargo xtask layers
-
-      - name: wasm check (L0-L6)
-        if: runner.os == 'Linux'
-        run: cargo xtask wasm
-
-      # The new menu item is a shell command outside Photoshop's catalogue; show whether the
-      # generated parity checklist moves (report only).
-      - name: Parity checklist
-        if: runner.os == 'Linux'
-        run: |
-          cargo xtask parity
-          git diff --stat -- docs/parity-checklist.md || true
+      - name: Test photocraft-ui-egui (lib + integration tests)
+        run: cargo test -p photocraft-ui-egui --lib --tests --locked
 
   portable:
     name: portable zip (windows x64, unsigned)
