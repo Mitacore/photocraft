@@ -1,9 +1,8 @@
 # Fork-only test build of Sync View (and the linked reference/drawing navigation under it).
-# Windows only: format, clippy and tests of the touched crate, then builds an UNSIGNED portable
-# Windows x64 zip the same way packaging/windows/package.ps1 does (static CRT, --features heif,
-# portable.txt beside the exe), without the MSI. Nothing is published: the zip is a downloadable
-# artifact of the run. The official signed release stays in release.yml.
-name: Linked navigation (Windows x64 portable)
+# Windows only: format, clippy and tests of the touched crate, then builds an UNSIGNED Windows x64
+# MSI installer with packaging/windows/package.ps1 (static CRT, --features heif). Nothing is
+# published: the MSI is a downloadable artifact of the run. The official signed release stays in release.yml.
+name: Linked navigation (Windows x64 installer)
 
 # Manual only (Actions › Run workflow): pushes build the quicker Fast Preview instead
 # (fast-preview-windows.yml).
@@ -86,7 +85,7 @@ jobs:
           retention-days: 14
 
   portable:
-    name: portable zip (windows x64, unsigned)
+    name: MSI installer (windows x64, unsigned)
     needs: checks
     runs-on: windows-latest
     steps:
@@ -98,60 +97,32 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          key: portable-x64
+          key: msi-x64
 
-      - name: Build photocraft.exe and photocraft-cli.exe
-        shell: pwsh
-        env:
-          # Static CRT, as package.ps1: no Visual C++ redistributable needed on the artist's PC.
-          CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_RUSTFLAGS: -C target-feature=+crt-static
-          PHOTOCRAFT_REQUIRE_WINRES: "1"
-        run: |
-          $env:PHOTOCRAFT_BUILD_SHA = "${{ github.sha }}"
-          $env:PHOTOCRAFT_BUILD_DATE = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd')
-          cargo build --release --locked -p photocraft -p photocraft-cli --features heif --target x86_64-pc-windows-msvc
-          if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
-
-      - name: Package portable zip
+      - name: Install WiX v5
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $bin = 'target\x86_64-pc-windows-msvc\release'
-          # PE checks, as package.ps1: x64 machine; the app is GUI (2), the CLI console (3).
-          function Get-PeHeader([string] $Path) {
-            $b = [IO.File]::ReadAllBytes($Path); $pe = [BitConverter]::ToInt32($b, 0x3C)
-            @{ Machine = [BitConverter]::ToUInt16($b, $pe + 4); Subsystem = [BitConverter]::ToUInt16($b, $pe + 0x5C) }
-          }
-          foreach ($c in @(@('photocraft.exe', 2), @('photocraft-cli.exe', 3))) {
-            $h = Get-PeHeader (Join-Path $bin $c[0])
-            if ($h.Machine -ne 0x8664 -or $h.Subsystem -ne $c[1]) { throw "$($c[0]): machine $($h.Machine) subsystem $($h.Subsystem)" }
-          }
-          & (Join-Path $bin 'photocraft-cli.exe') --version
-          if ($LASTEXITCODE -ne 0) { throw "photocraft-cli --version failed" }
-          $name = "photocraft-linked-navigation-windows-x64-portable"
-          $dir = Join-Path 'dist' $name
-          New-Item -ItemType Directory -Force $dir | Out-Null
-          Copy-Item (Join-Path $bin 'photocraft.exe'), (Join-Path $bin 'photocraft-cli.exe') $dir
-          foreach ($f in 'README.md', 'LICENSE-MIT', 'LICENSE-APACHE', 'NOTICE', 'ATTRIBUTION.md') { if (Test-Path $f) { Copy-Item $f $dir } }
-          # Portable mode: settings and presets go to PhotoCraftData\ next to the exe.
-          Copy-Item 'packaging\windows\portable.txt' $dir
-          @"
-          PhotoCraft - Sync View test build (UNSIGNED)
-          Built from ${{ github.repository }} @ ${{ github.sha }}
+          dotnet tool install --global wix --version 5.0.2
+          wix extension add -g WixToolset.UI.wixext/5.0.2 WixToolset.Util.wixext/5.0.2
 
-          This build is not code-signed. Windows SmartScreen or your antivirus may warn before
-          it runs; that is expected for a custom build. Do not turn your antivirus off.
+      # package.ps1 builds the exes (static CRT, --features heif), checks their PE headers, builds and
+      # validates the MSI, and skips signing when no signing secrets are set.
+      - name: Build the MSI installer
+        shell: pwsh
+        run: pwsh packaging/windows/package.ps1 -Arch x64
 
-          Try it: open an image, then click the Sync View button at the right end of the tool
-          options bar (two frames around circling arrows). A second window opens on the same
-          image; zoom, pan and rotation follow in both. Click it again to close that window.
-          "@ | Set-Content -Encoding utf8 (Join-Path $dir 'READ-ME-FIRST.txt')
-          Get-FileHash (Join-Path $dir '*.exe') -Algorithm SHA256 | ForEach-Object { "$($_.Hash)  $(Split-Path $_.Path -Leaf)" } |
-            Set-Content -Encoding ascii (Join-Path $dir 'SHA256SUMS.txt')
-          Get-Content (Join-Path $dir 'SHA256SUMS.txt')
+      - name: Checksum
+        shell: pwsh
+        run: |
+          $msi = Get-ChildItem dist/release -Filter *.msi
+          if ($msi.Count -ne 1) { throw "expected one MSI, found $($msi.Count)" }
+          "$((Get-FileHash $msi[0].FullName -Algorithm SHA256).Hash)  $($msi[0].Name)" | Set-Content -Encoding ascii "$($msi[0].FullName).sha256"
+          Get-Item dist/release/* | Select-Object Name, Length
 
       - uses: actions/upload-artifact@v4
         with:
-          name: photocraft-linked-navigation-windows-x64-portable
-          path: dist/photocraft-linked-navigation-windows-x64-portable
+          name: photocraft-linked-navigation-windows-x64-installer
+          path: |
+            dist/release/*.msi
+            dist/release/*.sha256
           retention-days: 30
