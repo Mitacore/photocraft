@@ -182,6 +182,9 @@ const FINE_MAX: usize = 2000;
 type P = [f64; 2];
 
 /// A corrected shape, in document coordinates.
+// `Spline` holds its cubic pieces inline (MAX_SEGMENTS of them): a shape is built once per stroke, so
+// boxing them would only add an allocation.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Line {

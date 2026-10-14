@@ -3731,3 +3731,8 @@ curves	Smooth	Wygładź
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Inteligentny kształt — przytrzymaj na końcu pociągnięcia, aby dopracować jego kształt
 	Smart Shape hold time	Czas przytrzymania inteligentnego kształtu
+	Cleanup Strength	Siła oczyszczania
+	Correction Types	Typy korekty
+	Geometric Shapes	Kształty geometryczne
+	Freeform Cleanup	Czyszczenie odręczne
+	Both off: holding still leaves strokes exactly as drawn.	Oba wyłączone: przytrzymanie pozostawia pociągnięcia dokładnie takie, jak narysowano.

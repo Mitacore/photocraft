@@ -3866,3 +3866,8 @@ cameraData	Lens	Lens
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Akıllı Şekil — şeklini mükemmelleştirmek için vuruşun sonunda basılı tutun
 	Smart Shape hold time	Akıllı Şekil bekleme süresi
+	Cleanup Strength	Temizleme Gücü
+	Correction Types	Düzeltme Türleri
+	Geometric Shapes	Geometrik Şekiller
+	Freeform Cleanup	Serbest Biçim Temizleme
+	Both off: holding still leaves strokes exactly as drawn.	İkisi de kapalı: sabit tutmak fırça darbelerini çizildiği gibi bırakır.

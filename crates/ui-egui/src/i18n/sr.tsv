@@ -4209,3 +4209,8 @@ shape	Appearance	Izgled
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Pametan oblik — zadržite na kraju poteza da usavršite njegov oblik
 	Smart Shape hold time	Vreme zadržavanja pametnog oblika
+	Cleanup Strength	Jačina čišćenja
+	Correction Types	Vrste korekcije
+	Geometric Shapes	Geometrijski oblici
+	Freeform Cleanup	Čišćenje slobodne forme
+	Both off: holding still leaves strokes exactly as drawn.	Oba isključena: zadržavanje ostavlja poteze tačno onako kako su nacrtani.

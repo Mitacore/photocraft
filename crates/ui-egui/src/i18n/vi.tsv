@@ -3619,3 +3619,8 @@ curves	Smooth	Làm mượt
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Hình dạng thông minh — giữ ở cuối nét để hoàn thiện hình dạng
 	Smart Shape hold time	Thời gian giữ hình dạng thông minh
+	Cleanup Strength	Mức độ làm sạch
+	Correction Types	Loại hiệu chỉnh
+	Geometric Shapes	Hình học
+	Freeform Cleanup	Làm sạch tự do
+	Both off: holding still leaves strokes exactly as drawn.	Cả hai đều tắt: giữ yên sẽ để nét vẽ y nguyên như đã vẽ.

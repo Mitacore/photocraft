@@ -352,7 +352,8 @@ fn cleanup_strength_sets_how_much_wobble_goes_but_never_the_corners() {
         }
         smooth.push(turning(&out, 600));
     }
-    let [light, balanced, strong] = smooth[..] else { unreachable!() };
+    assert_eq!(smooth.len(), 3, "one measurement per strength");
+    let (light, balanced, strong) = (smooth[0], smooth[1], smooth[2]);
     assert!(light < raw && strong < 0.85 * light, "raw {raw:.1}, light {light:.1}, balanced {balanced:.1}, strong {strong:.1}");
     assert!(balanced <= 1.05 * light && strong <= 1.05 * balanced, "light {light:.1}, balanced {balanced:.1}, strong {strong:.1}");
 }

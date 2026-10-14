@@ -3811,3 +3811,8 @@ curves	Smooth	スムーズ
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	スマートシェイプ — ストロークの終わりで止めると形を整えます
 	Smart Shape hold time	スマートシェイプの待機時間
+	Cleanup Strength	補正の強さ
+	Correction Types	補正の種類
+	Geometric Shapes	幾何学図形
+	Freeform Cleanup	フリーフォームの補正
+	Both off: holding still leaves strokes exactly as drawn.	両方オフ：静止しても線は描いたままになります。

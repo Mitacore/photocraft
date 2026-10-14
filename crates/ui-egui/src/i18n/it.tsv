@@ -4098,3 +4098,8 @@ navigator	Zoom	Zoom
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Forma intelligente — tieni premuto alla fine di un tratto per perfezionarne la forma
 	Smart Shape hold time	Tempo di attesa della forma intelligente
+	Cleanup Strength	Intensità di pulizia
+	Correction Types	Tipi di correzione
+	Geometric Shapes	Forme geometriche
+	Freeform Cleanup	Pulizia a mano libera
+	Both off: holding still leaves strokes exactly as drawn.	Entrambi disattivati: tenere fermo lascia i tratti esattamente come disegnati.

@@ -4055,3 +4055,8 @@ cameraRaw	Yellow	Sárga
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Intelligens alakzat — a vonás végén tartva tökéletesíti az alakját
 	Smart Shape hold time	Intelligens alakzat tartási ideje
+	Cleanup Strength	Tisztítás erőssége
+	Correction Types	Javítás típusai
+	Geometric Shapes	Geometriai alakzatok
+	Freeform Cleanup	Szabadkézi tisztítás
+	Both off: holding still leaves strokes exactly as drawn.	Mindkettő kikapcsolva: a megtartás a vonásokat pontosan úgy hagyja, ahogy rajzolták.

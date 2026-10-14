@@ -2742,3 +2742,8 @@ curves	Smooth	平滑
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	智能形状 — 在笔画末尾停住即可修正形状
 	Smart Shape hold time	智能形状停留时间
+	Cleanup Strength	清理强度
+	Correction Types	校正类型
+	Geometric Shapes	几何形状
+	Freeform Cleanup	自由形状清理
+	Both off: holding still leaves strokes exactly as drawn.	两者都关闭：停留时笔画保持绘制时的原样。

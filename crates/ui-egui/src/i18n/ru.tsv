@@ -3079,3 +3079,8 @@ curves	Smooth	Сгладить
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Умная фигура — задержите в конце штриха, чтобы выровнять его форму
 	Smart Shape hold time	Время удержания умной фигуры
+	Cleanup Strength	Сила очистки
+	Correction Types	Типы коррекции
+	Geometric Shapes	Геометрические фигуры
+	Freeform Cleanup	Очистка произвольной формы
+	Both off: holding still leaves strokes exactly as drawn.	Оба выключены: удержание оставляет штрихи точно такими, как нарисованы.

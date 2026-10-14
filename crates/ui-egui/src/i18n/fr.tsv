@@ -3135,3 +3135,8 @@ curves	Smooth	Lisser
 # Smart Shape (Brush and Pencil options bar)
 	Smart Shape — Hold at the end of a stroke to perfect its shape	Forme intelligente — maintenez à la fin d’un tracé pour parfaire sa forme
 	Smart Shape hold time	Durée de maintien de la forme intelligente
+	Cleanup Strength	Intensité du nettoyage
+	Correction Types	Types de correction
+	Geometric Shapes	Formes géométriques
+	Freeform Cleanup	Nettoyage à main levée
+	Both off: holding still leaves strokes exactly as drawn.	Les deux désactivés : rester immobile laisse les traits exactement comme dessinés.
