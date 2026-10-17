@@ -1873,31 +1873,31 @@ pub(crate) fn embedded(app: &mut PhotocraftApp, ui: &mut egui::Ui, layout: &crat
     // A camera change the editor asked for since the last frame (fit, fill): resolve it against the host's canvas and hand it
     // back instead of imposing the old camera over it.
     let asked = view.fit_pending || view.fill_pending;
-    if asked {
-        if view.fit_pending {
-            fit_view(&mut view, &doc, content.size(), ppp, aspect);
-        } else {
-            fill_view(&mut view, &doc, content.size(), ppp, aspect);
-        }
-        view.fit_pending = false;
-        view.fill_pending = false;
-    }
-    let want = |v: &View| EmbedCamera {
+    // A fit or fill is against the host's whole view of its workspace, not the part of the document that happens to show.
+    let want = |v: &View, within: Rect| EmbedCamera {
         scale: v.zoom / ppp,
-        origin: Pos2::new(content.center().x - v.center[0] * v.zoom / ppp, content.center().y - v.center[1] * v.zoom / ppp),
+        origin: Pos2::new(within.center().x - v.center[0] * v.zoom / ppp, within.center().y - v.center[1] * v.zoom / ppp),
     };
     let mut outcome = EmbedOutcome::default();
     if asked {
-        outcome.camera = Some(want(&view));
-    } else {
-        view.zoom = layout.scale * ppp;
-        view.center = [(content.center().x - layout.origin.x) / layout.scale, (content.center().y - layout.origin.y) / layout.scale];
-        view.rotation = 0.0;
+        if view.fit_pending {
+            fit_view(&mut view, &doc, layout.viewport.size(), ppp, aspect);
+        } else {
+            fill_view(&mut view, &doc, layout.viewport.size(), ppp, aspect);
+        }
+        view.fit_pending = false;
+        view.fill_pending = false;
+        outcome.camera = Some(want(&view, layout.viewport));
     }
+    // The host's camera is imposed (a camera asked for above is adopted by the host next frame; this frame still draws under
+    // the host's current one).
+    view.zoom = layout.scale * ppp;
+    view.center = [(content.center().x - layout.origin.x) / layout.scale, (content.center().y - layout.origin.y) / layout.scale];
+    view.rotation = 0.0;
     let imposed = view.clone();
     let after = canvas_view(app, ui, idx, rect, view, true);
     if outcome.camera.is_none() && (after.zoom != imposed.zoom || after.center != imposed.center) {
-        outcome.camera = Some(want(&after));
+        outcome.camera = Some(want(&after, content));
     }
     crate::layer_transfer::finish(app, ui.ctx());
     crate::paint_mouse::show_picker(app, ui.ctx());

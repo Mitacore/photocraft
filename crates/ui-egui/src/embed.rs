@@ -30,6 +30,8 @@ pub struct EmbedLayout {
     pub panels: EmbedPanels,
     /// Where the document canvas is drawn (the host's view of the document, clipped to what is visible).
     pub canvas: Rect,
+    /// The host's whole view of its workspace: what View > Fit on Screen fits the document into.
+    pub viewport: Rect,
     /// Screen position of document point (0, 0).
     pub origin: Pos2,
     /// Screen points per document pixel.
