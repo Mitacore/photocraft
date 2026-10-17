@@ -595,6 +595,8 @@ pub struct PhotocraftApp {
     /// sent again only when it changes, so idle frames don't spam the backend.
     last_window_title: String,
     fonts_ready: bool,
+    /// A host owns the camera this frame ([`embed`]): the canvas draws no scrollbars of its own.
+    pub(crate) embedded: bool,
     /// Screen rect of the main canvas last frame (for overlays and the navigator).
     pub last_canvas_rect: egui::Rect,
     /// Physical pixels per egui point of the canvas last frame (`ctx.pixels_per_point`, which
@@ -800,6 +802,7 @@ impl PhotocraftApp {
             custom_titlebar: false,
             last_window_title: String::new(),
             fonts_ready: false,
+            embedded: false,
             last_canvas_rect: egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0)),
             ppp: 1.0,
             drop_canvas_rect: None,
@@ -1771,6 +1774,7 @@ impl PhotocraftApp {
     /// `None`: panels around one central canvas) or the host's layout (`embed`: tool panels and the canvas in the rects
     /// the host chose). Everything else (dialogs, jobs, windows) runs once per frame either way.
     pub(crate) fn frame_ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame, embed: Option<&embed::EmbedLayout>) -> embed::EmbedOutcome {
+        self.embedded = embed.is_some();
         let ctx = ui.ctx().clone();
         self.hover_layer = None;
         i18n::set_current(i18n::Lang::from_pref(&self.session.prefs().interface.language));
