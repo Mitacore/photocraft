@@ -77,6 +77,7 @@ pub mod dock;
 pub mod duplicate_layer_ui;
 pub mod edit_history;
 pub mod egui_fonts;
+pub mod embed;
 pub mod enable_rules;
 pub mod eraser_ui;
 pub mod export_dialog;
@@ -1761,6 +1762,15 @@ impl eframe::App for PhotocraftApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        self.frame_ui(ui, frame, None);
+    }
+}
+
+impl PhotocraftApp {
+    /// One frame of the editor: the lifecycle shared by every mode, then either the standalone layout (`embed` is
+    /// `None`: panels around one central canvas) or the host's layout (`embed`: tool panels and the canvas in the rects
+    /// the host chose). Everything else (dialogs, jobs, windows) runs once per frame either way.
+    pub(crate) fn frame_ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame, embed: Option<&embed::EmbedLayout>) -> embed::EmbedOutcome {
         let ctx = ui.ctx().clone();
         self.hover_layer = None;
         i18n::set_current(i18n::Lang::from_pref(&self.session.prefs().interface.language));
@@ -1768,7 +1778,7 @@ impl eframe::App for PhotocraftApp {
         if !self.fonts_ready {
             ctx.request_repaint();
             self.automation_input = false;
-            return;
+            return embed::EmbedOutcome::default();
         }
         let t0 = gpu_canvas::now_ms();
         // A text field's right-click menu, before any field is drawn (text_field_menu.rs).
@@ -1792,7 +1802,7 @@ impl eframe::App for PhotocraftApp {
                 }
             });
             self.automation_input = false;
-            return;
+            return embed::EmbedOutcome::default();
         }
         if screen_picker::busy(&ctx) {
             ui.disable();
@@ -1801,27 +1811,33 @@ impl eframe::App for PhotocraftApp {
         // The OS title bar (and the taskbar / Alt-Tab entry) follows the active file; with the
         // system title bar this is where the document name lives, as the in-app title is hidden.
         panels::sync_window_title(self, &ctx);
-        let chrome = !self.ui.view.hides_chrome();
-        if chrome && self.ui.panels.menu_bar {
-            panels::title_bar(self, ui);
+        let mut outcome = embed::EmbedOutcome::default();
+        match embed {
+            None => {
+                let chrome = !self.ui.view.hides_chrome();
+                if chrome && self.ui.panels.menu_bar {
+                    panels::title_bar(self, ui);
+                }
+                if chrome && self.ui.panels.options_bar {
+                    panels::options_bar(self, ui);
+                }
+                if chrome && self.ui.panels.status_bar {
+                    panels::status_bar(self, ui);
+                }
+                if chrome && self.ui.panels.toolbar {
+                    panels::toolbar(self, ui);
+                }
+                if chrome && self.ui.panels.dock {
+                    panels::right_dock(self, ui);
+                }
+                let t = theme::Tokens::get(&ctx);
+                let backdrop = if chrome { prefs_ui::pasteboard_color(self).unwrap_or(t.canvas) } else { egui::Color32::BLACK };
+                egui::CentralPanel::default().frame(egui::Frame::NONE.fill(backdrop)).show(ui, |ui| {
+                    canvas::document_area(self, ui);
+                });
+            }
+            Some(layout) => outcome = embed::show(self, ui, layout),
         }
-        if chrome && self.ui.panels.options_bar {
-            panels::options_bar(self, ui);
-        }
-        if chrome && self.ui.panels.status_bar {
-            panels::status_bar(self, ui);
-        }
-        if chrome && self.ui.panels.toolbar {
-            panels::toolbar(self, ui);
-        }
-        if chrome && self.ui.panels.dock {
-            panels::right_dock(self, ui);
-        }
-        let t = theme::Tokens::get(&ctx);
-        let backdrop = if chrome { prefs_ui::pasteboard_color(self).unwrap_or(t.canvas) } else { egui::Color32::BLACK };
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(backdrop)).show(ui, |ui| {
-            canvas::document_area(self, ui);
-        });
         panels::properties_window(self, &ctx);
         brush_panel::window(self, &ctx);
         preset_panels::windows(self, &ctx);
@@ -1880,6 +1896,7 @@ impl eframe::App for PhotocraftApp {
         jobs_ui::keep_polling(self, &ctx);
         // Menus and buttons in this frame may have asked for a file dialog.
         self.poll_file_dialog(&ctx, Some(frame));
+        outcome
     }
 }
 

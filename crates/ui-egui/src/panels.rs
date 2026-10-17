@@ -903,7 +903,7 @@ fn reveal_focused_control(ui: &egui::Ui) {
 
 /// Options bar height: Preferences ▸ Workspace ▸ Enable Narrow Options Bar trims it, as in
 /// Photoshop, leaving the document more room.
-fn options_bar_height(pro: bool, narrow: bool) -> f32 {
+pub(crate) fn options_bar_height(pro: bool, narrow: bool) -> f32 {
     match (pro, narrow) {
         (true, false) => 36.0,
         (true, true) => 30.0,

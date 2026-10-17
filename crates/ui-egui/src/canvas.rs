@@ -1843,6 +1843,67 @@ pub fn document_area(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     crate::paint_mouse::show_picker(app, ui.ctx());
 }
 
+/// The canvas for a host that owns the camera ([`crate::embed`]): the same `canvas_view` as the standalone layout, drawn
+/// in `layout.canvas` with the host's camera imposed. No tab strip, home screen or Window › Arrange tiling: the host
+/// shows one document, the active one.
+pub(crate) fn embedded(app: &mut PhotocraftApp, ui: &mut egui::Ui, layout: &crate::embed::EmbedLayout) -> crate::embed::EmbedOutcome {
+    use crate::embed::{EmbedCamera, EmbedOutcome};
+    app.drop_canvas_rect = None;
+    app.tab_strip = None;
+    retain_gpu_documents(app);
+    crate::transform_tool::track_steps(app, ui.ctx());
+    crate::cas_transform::tick(app, ui.ctx());
+    crate::symmetry_ui::track(app, ui.ctx());
+    let Some(idx) = app.session.active_index() else { return EmbedOutcome::default() };
+    let rect = layout.canvas;
+    app.last_canvas_rect = rect;
+    app.drop_canvas_rect = Some(rect);
+    let ppp = ui.ctx().pixels_per_point();
+    let aspect = app.ui.view.display_aspect();
+    let content = crate::rulers::content_rect(app, rect);
+    let doc = app.session.documents()[idx].doc.clone();
+    let size = [doc.size.width, doc.size.height];
+    let mut view = app.ui.views[idx].clone();
+    // A view that never showed this document starts with a pending fit: that is a default, not a request.
+    if view.doc_size == [0, 0] {
+        view.fit_pending = false;
+        view.fill_pending = false;
+    }
+    view.doc_size = size;
+    // A camera change the editor asked for since the last frame (fit, fill): resolve it against the host's canvas and hand it
+    // back instead of imposing the old camera over it.
+    let asked = view.fit_pending || view.fill_pending;
+    if asked {
+        if view.fit_pending {
+            fit_view(&mut view, &doc, content.size(), ppp, aspect);
+        } else {
+            fill_view(&mut view, &doc, content.size(), ppp, aspect);
+        }
+        view.fit_pending = false;
+        view.fill_pending = false;
+    }
+    let want = |v: &View| EmbedCamera {
+        scale: v.zoom / ppp,
+        origin: Pos2::new(content.center().x - v.center[0] * v.zoom / ppp, content.center().y - v.center[1] * v.zoom / ppp),
+    };
+    let mut outcome = EmbedOutcome::default();
+    if asked {
+        outcome.camera = Some(want(&view));
+    } else {
+        view.zoom = layout.scale * ppp;
+        view.center = [(content.center().x - layout.origin.x) / layout.scale, (content.center().y - layout.origin.y) / layout.scale];
+        view.rotation = 0.0;
+    }
+    let imposed = view.clone();
+    let after = canvas_view(app, ui, idx, rect, view, true);
+    if outcome.camera.is_none() && (after.zoom != imposed.zoom || after.center != imposed.center) {
+        outcome.camera = Some(want(&after));
+    }
+    crate::layer_transfer::finish(app, ui.ctx());
+    crate::paint_mouse::show_picker(app, ui.ctx());
+    outcome
+}
+
 /// Window › Arrange tiles: each document shown with its tile in `rect`, or `None` when the
 /// active document fills the area.
 pub(crate) fn arranged_cells(app: &PhotocraftApp, rect: Rect) -> Option<Vec<(usize, Rect)>> {
