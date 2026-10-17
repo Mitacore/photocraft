@@ -88,6 +88,9 @@ fn in_rect(ui: &mut Ui, rect: Rect, add: impl FnOnce(&mut Ui)) {
 }
 
 pub(crate) fn show(app: &mut PhotocraftApp, ui: &mut Ui, layout: &EmbedLayout) -> EmbedOutcome {
+    // Canvas first, panels after: where they overlap the panels are painted over the canvas and win the pointer (later widgets
+    // are on top).
+    let outcome = canvas::embedded(app, ui, layout);
     if !app.ui.view.hides_chrome() {
         if let Some(r) = layout.panels.menu.filter(|_| app.ui.panels.menu_bar) {
             in_rect(ui, r, |ui| panels::title_bar(app, ui));
@@ -102,5 +105,5 @@ pub(crate) fn show(app: &mut PhotocraftApp, ui: &mut Ui, layout: &EmbedLayout) -
             in_rect(ui, r, |ui| panels::right_dock(app, ui));
         }
     }
-    canvas::embedded(app, ui, layout)
+    outcome
 }
